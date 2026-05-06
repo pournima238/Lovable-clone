@@ -45,7 +45,7 @@ public class ProjectMemberController {
     }
 
 
-    @PatchMapping("/{memberId}")
+    @DeleteMapping("/{memberId}")
     public ResponseEntity<MemberResponse> deleteProjectMember(@PathVariable Long projectId,
                                                            @PathVariable Long memberId) {
 
