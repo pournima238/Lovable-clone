@@ -15,7 +15,7 @@ import java.time.Instant;
 @NoArgsConstructor
 @Entity
 @Builder
-@Table(name="projects")
+@Table(name="projects") //basically db name in pgsql
 public class Project {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     Long id;

@@ -1,0 +1,8 @@
+1. We are using map struct instead of model mapper because for dto we are using records instead of class.
+2. Remember lombok should run b4 map struct.
+3. Both generate while compile time, so sequence matters.
+4. To see all generated classes while compiling target->generated-sources->annotations->generated file
+5. records don't have getters and setters that why model mapper does not work
+6. @Embeddable annotation is used to define a class whose properties are meant to be mapped directly into the database table of the entity that owns it, rather than having its own separate table.Useful for making composite keys in table look into project member entity.
+7. Now in project member table we have composite key project id and user id. So in this we are using concept of mapsId.
+8. project member should be many to many with only 2 columns but i also want other columns like userRole in that project so thats why mapsId concept is used.

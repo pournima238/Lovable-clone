@@ -16,7 +16,7 @@ import java.time.Instant;
 @NoArgsConstructor
 @Entity
 @Builder
-@Table(name="users")
+@Table(name="users")// because Sb already has user and even postgres has
 public class User {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
