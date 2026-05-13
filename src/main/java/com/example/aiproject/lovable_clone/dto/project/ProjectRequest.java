@@ -1,4 +1,6 @@
 package com.example.aiproject.lovable_clone.dto.project;
 
-public record ProjectRequest(String name) {
+import jakarta.validation.constraints.Size;
+
+public record ProjectRequest(@Size(min=1, max = 50) String name) {
 }

@@ -5,6 +5,7 @@ import com.example.aiproject.lovable_clone.dto.project.ProjectResponse;
 import com.example.aiproject.lovable_clone.dto.project.ProjectSummaryResponse;
 import com.example.aiproject.lovable_clone.entity.Project;
 import com.example.aiproject.lovable_clone.entity.User;
+import com.example.aiproject.lovable_clone.error.ResourceNotFoundException;
 import com.example.aiproject.lovable_clone.mapper.ProjectMapper;
 import com.example.aiproject.lovable_clone.repository.ProjectRepository;
 import com.example.aiproject.lovable_clone.repository.UserRepository;
@@ -36,7 +37,7 @@ public class ProjectServiceImpl implements ProjectService {
 
     @Override
     public ProjectResponse getProjectById(Long id, Long userId) {
-        Project project= projectRepository.findAllAccessibleByProject(userId,id).orElseThrow();
+        Project project= projectRepository.findAllAccessibleByProject(userId,id).orElseThrow(()->new ResourceNotFoundException("Project",id.toString()));
         return projectMapper.toProjectResponse(project);
     }
 
@@ -53,7 +54,7 @@ public class ProjectServiceImpl implements ProjectService {
     @Override
     public ProjectResponse updateProject(Long id, ProjectRequest request, Long userId) {
 
-        Project project = projectRepository.findAllAccessibleByProject(userId,id).orElseThrow();
+        Project project = projectRepository.findAllAccessibleByProject(userId,id).orElseThrow((()->new ResourceNotFoundException("Project",id.toString())));
         project.setName(request.name());
         project = this.projectRepository.save(project);
         return projectMapper.toProjectResponse(project);
@@ -61,7 +62,7 @@ public class ProjectServiceImpl implements ProjectService {
 
     @Override
     public void softDelete(Long id, Long userId) {
-        Project project = projectRepository.findAllAccessibleByProject(userId,id).orElseThrow();
+        Project project = projectRepository.findAllAccessibleByProject(userId,id).orElseThrow((()->new ResourceNotFoundException("Project",id.toString())));
         if(!project.getOwner().getId().equals(userId)){
             throw new RuntimeException("You are not owner so you cannot delete this project");
         }

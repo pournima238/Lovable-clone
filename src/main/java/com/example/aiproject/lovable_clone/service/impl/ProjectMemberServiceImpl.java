@@ -7,7 +7,6 @@ import com.example.aiproject.lovable_clone.entity.Project;
 import com.example.aiproject.lovable_clone.entity.ProjectMember;
 import com.example.aiproject.lovable_clone.entity.ProjectMemberId;
 import com.example.aiproject.lovable_clone.entity.User;
-import com.example.aiproject.lovable_clone.enums.ProjectRole;
 import com.example.aiproject.lovable_clone.mapper.ProjectMemberMapper;
 import com.example.aiproject.lovable_clone.repository.ProjectMemberRepository;
 import com.example.aiproject.lovable_clone.repository.ProjectRepository;
@@ -58,23 +57,35 @@ public class ProjectMemberServiceImpl implements ProjectMemberService {
         if(user.getId().equals(userId)){
             throw new RuntimeException("Owner cannot request itself");
         }
-        ProjectMemberId projectMemberId = new ProjectMemberId(projectId,userId);
+        ProjectMemberId projectMemberId = new ProjectMemberId(projectId,user.getId());
        if(projectMemberRepository.existsById(projectMemberId)){
            throw new RuntimeException("This user is already part of this project");
        }
-       ProjectMember projectMember = ProjectMember.builder().project(project).user(user).invitedAt(Instant.now()).projectRole(ProjectRole.VIEWER).id(projectMemberId).build();
+       ProjectMember projectMember = ProjectMember.builder().project(project).user(user).invitedAt(Instant.now()).projectRole(request.role()).id(projectMemberId).build();
        projectMember=projectMemberRepository.save(projectMember);
        return projectMemberMapper.toProjectMemberResponseFromProjectMember(projectMember);
     }
 
     @Override
     public MemberResponse updateMemberRole(Long projectId, Long memberId, UpdateMemberRoleRequest request, Long userId) {
-        return null;
+        Project project = findProjectById(projectId,userId);
+        ProjectMemberId projectMemberId= new ProjectMemberId(projectId,memberId);
+        ProjectMember projectMember = projectMemberRepository.findById(projectMemberId).orElseThrow();
+        projectMember.setProjectRole(request.role());
+
+        projectMember = projectMemberRepository.save(projectMember);
+        return projectMemberMapper.toProjectMemberResponseFromProjectMember(projectMember);
     }
 
     @Override
-    public MemberResponse deleteMemberRole(Long projectId, Long memberId, Long userId) {
-        return null;
+    public void deleteMemberRole(Long projectId, Long memberId, Long userId) {
+        Project project = findProjectById(projectId,userId);
+        if(!project.getOwner().getId().equals(userId)){
+            throw  new RuntimeException("Only owner can remove project member");
+        }
+        ProjectMemberId projectMemberId = new ProjectMemberId(projectId,memberId);
+        projectMemberRepository.deleteById(projectMemberId);
+
     }
 
     public Project findProjectById(Long projectId, Long userId) {
