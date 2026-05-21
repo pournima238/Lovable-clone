@@ -14,9 +14,8 @@ public interface ProjectMemberMapper {
     MemberResponse toProjectMemberResponseFromUserOwner(User owner);
 
     @Mapping(target = "id",        source = "user.id")
-    @Mapping(target = "email",     source = "user.email")
+    @Mapping(target = "username",     source = "user.username")
     @Mapping(target = "name",      source = "user.name")
-    @Mapping(target = "avatarUrl", source = "user.avatarUrl")
     @Mapping(target = "role",      source = "projectRole")  // name mismatch
     MemberResponse toProjectMemberResponseFromProjectMember(ProjectMember member);
 }

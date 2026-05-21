@@ -15,17 +15,18 @@ import java.time.Instant;
 @NoArgsConstructor
 @Entity
 @Builder
-@Table(name="projects") //basically db name in pgsql
+@Table(name="projects",
+indexes={
+        @Index(name="idx_projects_updated_at_desc",columnList = "updatedAt DESC, deletedAt"),
+        @Index(name="idx_projects_deleted_at",columnList = "deletedAt")
+}
+) //basically db name in pgsql
 public class Project {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     Long id;
 
     @Column(nullable = false)
     String name;
-
-    @ManyToOne
-    @JoinColumn(name="owner_id",nullable = false)
-    User owner;
 
     Boolean isPublic;
 

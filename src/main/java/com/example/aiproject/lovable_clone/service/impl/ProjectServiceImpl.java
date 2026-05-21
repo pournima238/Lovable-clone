@@ -4,9 +4,13 @@ import com.example.aiproject.lovable_clone.dto.project.ProjectRequest;
 import com.example.aiproject.lovable_clone.dto.project.ProjectResponse;
 import com.example.aiproject.lovable_clone.dto.project.ProjectSummaryResponse;
 import com.example.aiproject.lovable_clone.entity.Project;
+import com.example.aiproject.lovable_clone.entity.ProjectMember;
+import com.example.aiproject.lovable_clone.entity.ProjectMemberId;
 import com.example.aiproject.lovable_clone.entity.User;
+import com.example.aiproject.lovable_clone.enums.ProjectRole;
 import com.example.aiproject.lovable_clone.error.ResourceNotFoundException;
 import com.example.aiproject.lovable_clone.mapper.ProjectMapper;
+import com.example.aiproject.lovable_clone.repository.ProjectMemberRepository;
 import com.example.aiproject.lovable_clone.repository.ProjectRepository;
 import com.example.aiproject.lovable_clone.repository.UserRepository;
 import com.example.aiproject.lovable_clone.service.ProjectService;
@@ -28,9 +32,9 @@ public class ProjectServiceImpl implements ProjectService {
     ProjectRepository projectRepository;
     UserRepository userRepository;
     ProjectMapper projectMapper;
+    ProjectMemberRepository projectMemberRepository;
     @Override
     public List<ProjectSummaryResponse> getAllProjects(Long userId) {
-//        return projectRepository.findAllAccessibleByUser(userId).stream().map(project->projectMapper.toProjectSummaryResponse(project)).collect(Collectors.toList());
     List<Project>allProjects = projectRepository.findAllAccessibleByUser(userId);
     return projectMapper.toProjectSummaryResponseList(allProjects);
     }
@@ -44,13 +48,36 @@ public class ProjectServiceImpl implements ProjectService {
     @Override
     public ProjectResponse createProject(ProjectRequest request, Long userId) {
 
-        User owner=userRepository.findById(userId).orElseThrow();
-        Project project=Project.builder().name(request.name()).owner(owner).isPublic(false).build();
-        project=projectRepository.save(project);
-        ProjectResponse savedProject = projectMapper.toProjectResponse(project);
-        return savedProject;
-    }
+        User owner = userRepository.findById(userId)
+                .orElseThrow();
 
+        // Create project
+        Project project = Project.builder()
+                .name(request.name())
+                .isPublic(false)
+                .build();
+
+        // SAVE PROJECT FIRST
+        project = projectRepository.save(project);
+
+        // NOW project has generated ID
+        ProjectMemberId projectMemberId =
+                new ProjectMemberId(project.getId(), userId);
+
+        // Create member
+        ProjectMember projectMember = ProjectMember.builder()
+                .id(projectMemberId)
+                .project(project)
+                .user(owner)
+                .projectRole(ProjectRole.OWNER)
+                .acceptedAt(Instant.now())
+                .build();
+
+        // Save membership
+        projectMemberRepository.save(projectMember);
+
+        return projectMapper.toProjectResponse(project);
+    }
     @Override
     public ProjectResponse updateProject(Long id, ProjectRequest request, Long userId) {
 
@@ -63,9 +90,6 @@ public class ProjectServiceImpl implements ProjectService {
     @Override
     public void softDelete(Long id, Long userId) {
         Project project = projectRepository.findAllAccessibleByProject(userId,id).orElseThrow((()->new ResourceNotFoundException("Project",id.toString())));
-        if(!project.getOwner().getId().equals(userId)){
-            throw new RuntimeException("You are not owner so you cannot delete this project");
-        }
         project.setDeletedAt(Instant.now());
 //        this.projectRepository.save(project);// since we are using transactional it has become dirty so need to write this
     }

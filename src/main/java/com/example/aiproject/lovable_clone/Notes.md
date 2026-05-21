@@ -22,3 +22,9 @@ Internally trims the string before checking.
     ✅ Is this table not extremely write-heavy?
     ✅ Are you combining columns that are always queried together? → Composite
     ✅ Must values be unique? → Unique index
+13. Order in index matters inside the columnList
+So in this order keep the first column such that filters out most of the things.
+14. In project table we have column of owner but we also have table of projectMember which has role of OWNER. So we can remove from that.
+15. after adding spring security by default all routes are protected
+16. in postman in basic auth you can add user and password in token
+17. 

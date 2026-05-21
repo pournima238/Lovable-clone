@@ -40,7 +40,7 @@ public class ProjectMemberServiceImpl implements ProjectMemberService {
         //calling this to find the owner
         Project project = findProjectById(projectId, userId);
         List<MemberResponse> memberResponseList = new ArrayList<>();
-        memberResponseList.add(projectMemberMapper.toProjectMemberResponseFromUserOwner(project.getOwner()));
+//        memberResponseList.add(projectMemberMapper.toProjectMemberResponseFromUserOwner(project.getOwner()));
         memberResponseList.addAll(projectMemberRepository.findByIdProjectId(projectId).stream().map(member ->
                 projectMemberMapper.toProjectMemberResponseFromProjectMember(member)).collect(Collectors.toList()));
         return memberResponseList;
@@ -50,10 +50,7 @@ public class ProjectMemberServiceImpl implements ProjectMemberService {
     @Override
     public MemberResponse inviteMember(Long projectId, InviteMemberRequest request, Long userId) {
         Project project = findProjectById(projectId,userId);
-        if(!project.getOwner().getId().equals(userId)){
-            throw new RuntimeException("You are not owner of this project so cannot send the invite");
-        }
-        User user = userRepository.findByEmail(request.email());
+        User user = userRepository.findByUsername(request.username()).orElseThrow();
         if(user.getId().equals(userId)){
             throw new RuntimeException("Owner cannot request itself");
         }
@@ -80,9 +77,9 @@ public class ProjectMemberServiceImpl implements ProjectMemberService {
     @Override
     public void deleteMemberRole(Long projectId, Long memberId, Long userId) {
         Project project = findProjectById(projectId,userId);
-        if(!project.getOwner().getId().equals(userId)){
-            throw  new RuntimeException("Only owner can remove project member");
-        }
+//        if(!project.getOwner().getId().equals(userId)){
+//            throw  new RuntimeException("Only owner can remove project member");
+//        }
         ProjectMemberId projectMemberId = new ProjectMemberId(projectId,memberId);
         projectMemberRepository.deleteById(projectMemberId);
 
