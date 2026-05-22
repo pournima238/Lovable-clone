@@ -11,6 +11,7 @@ import com.example.aiproject.lovable_clone.mapper.ProjectMemberMapper;
 import com.example.aiproject.lovable_clone.repository.ProjectMemberRepository;
 import com.example.aiproject.lovable_clone.repository.ProjectRepository;
 import com.example.aiproject.lovable_clone.repository.UserRepository;
+import com.example.aiproject.lovable_clone.security.AuthUtil;
 import com.example.aiproject.lovable_clone.service.ProjectMemberService;
 import jakarta.transaction.Transactional;
 import lombok.AccessLevel;
@@ -32,15 +33,13 @@ public class ProjectMemberServiceImpl implements ProjectMemberService {
     ProjectRepository projectRepository;
     ProjectMemberMapper projectMemberMapper;
     UserRepository userRepository;
+    private AuthUtil auth;
 
     @Override
     public List<MemberResponse> getProjectMembers(Long projectId) {
         //first find project
-        Long userId = 1L;
-        //calling this to find the owner
-        Project project = findProjectById(projectId, userId);
+        Long userId = auth.getCurrentUserId();
         List<MemberResponse> memberResponseList = new ArrayList<>();
-//        memberResponseList.add(projectMemberMapper.toProjectMemberResponseFromUserOwner(project.getOwner()));
         memberResponseList.addAll(projectMemberRepository.findByIdProjectId(projectId).stream().map(member ->
                 projectMemberMapper.toProjectMemberResponseFromProjectMember(member)).collect(Collectors.toList()));
         return memberResponseList;
@@ -65,7 +64,6 @@ public class ProjectMemberServiceImpl implements ProjectMemberService {
 
     @Override
     public MemberResponse updateMemberRole(Long projectId, Long memberId, UpdateMemberRoleRequest request, Long userId) {
-        Project project = findProjectById(projectId,userId);
         ProjectMemberId projectMemberId= new ProjectMemberId(projectId,memberId);
         ProjectMember projectMember = projectMemberRepository.findById(projectMemberId).orElseThrow();
         projectMember.setProjectRole(request.role());
@@ -76,10 +74,6 @@ public class ProjectMemberServiceImpl implements ProjectMemberService {
 
     @Override
     public void deleteMemberRole(Long projectId, Long memberId, Long userId) {
-        Project project = findProjectById(projectId,userId);
-//        if(!project.getOwner().getId().equals(userId)){
-//            throw  new RuntimeException("Only owner can remove project member");
-//        }
         ProjectMemberId projectMemberId = new ProjectMemberId(projectId,memberId);
         projectMemberRepository.deleteById(projectMemberId);
 

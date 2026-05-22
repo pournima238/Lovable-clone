@@ -3,6 +3,7 @@ package com.example.aiproject.lovable_clone.controller;
 import com.example.aiproject.lovable_clone.dto.project.ProjectRequest;
 import com.example.aiproject.lovable_clone.dto.project.ProjectResponse;
 import com.example.aiproject.lovable_clone.dto.project.ProjectSummaryResponse;
+import com.example.aiproject.lovable_clone.security.AuthUtil;
 import com.example.aiproject.lovable_clone.service.ProjectService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -18,34 +19,35 @@ import java.util.List;
 @RequestMapping("/api/project")
 public class ProjectController {
     private final ProjectService projectService;
+    private final AuthUtil auth;
 
     @GetMapping()
     public ResponseEntity<List<ProjectSummaryResponse>> getMyProjects() {
-        Long userId = 1L;
+        Long userId = auth.getCurrentUserId();
         return ResponseEntity.ok(projectService.getAllProjects(userId));
     }
 
      @GetMapping("/{id}")
     public ResponseEntity<ProjectResponse> getProjectById(@PathVariable Long id) {
-        Long userId=1L;
+         Long userId = auth.getCurrentUserId();
         return ResponseEntity.ok(projectService.getProjectById(id,userId));
     }
 
     @PostMapping
     public ResponseEntity<ProjectResponse> createProject(@RequestBody @Valid ProjectRequest request){
-        Long userId=1L;
+        Long userId = auth.getCurrentUserId();
         return ResponseEntity.status(HttpStatus.CREATED).body(projectService.createProject(request,userId));
     }
 
     @PatchMapping("/{id}")
     public ResponseEntity<ProjectResponse> updateProject(@PathVariable Long id, @RequestBody @Valid ProjectRequest request){
-        Long userId=1L;
+        Long userId = auth.getCurrentUserId();
         return ResponseEntity.ok(projectService.updateProject(id,request,userId));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteProject(@PathVariable Long id){
-        Long userId=1L;
+        Long userId = auth.getCurrentUserId();
         projectService.softDelete(id,userId);
         return ResponseEntity.noContent().build();
     }

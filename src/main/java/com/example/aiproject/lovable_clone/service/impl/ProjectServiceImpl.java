@@ -13,6 +13,7 @@ import com.example.aiproject.lovable_clone.mapper.ProjectMapper;
 import com.example.aiproject.lovable_clone.repository.ProjectMemberRepository;
 import com.example.aiproject.lovable_clone.repository.ProjectRepository;
 import com.example.aiproject.lovable_clone.repository.UserRepository;
+import com.example.aiproject.lovable_clone.security.AuthUtil;
 import com.example.aiproject.lovable_clone.service.ProjectService;
 import jakarta.transaction.Transactional;
 import lombok.AccessLevel;
@@ -47,9 +48,9 @@ public class ProjectServiceImpl implements ProjectService {
 
     @Override
     public ProjectResponse createProject(ProjectRequest request, Long userId) {
-
-        User owner = userRepository.findById(userId)
-                .orElseThrow();
+//        User owner = userRepository.findById(userId)
+//                .orElseThrow();
+        User owner= userRepository.getReferenceById(userId);
 
         // Create project
         Project project = Project.builder()
