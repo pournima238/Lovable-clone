@@ -19,6 +19,7 @@ import jakarta.transaction.Transactional;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -41,8 +42,9 @@ public class ProjectServiceImpl implements ProjectService {
     }
 
     @Override
-    public ProjectResponse getProjectById(Long id, Long userId) {
-        Project project= projectRepository.findAllAccessibleByProject(userId,id).orElseThrow(()->new ResourceNotFoundException("Project",id.toString()));
+    @PreAuthorize("@security.canViewProject(#projectId)")// this is spring expression language not compiled by java
+    public ProjectResponse getProjectById(Long projectId, Long userId) {
+        Project project= projectRepository.findAllAccessibleByProject(userId,projectId).orElseThrow(()->new ResourceNotFoundException("Project",projectId.toString()));
         return projectMapper.toProjectResponse(project);
     }
 
@@ -80,17 +82,19 @@ public class ProjectServiceImpl implements ProjectService {
         return projectMapper.toProjectResponse(project);
     }
     @Override
-    public ProjectResponse updateProject(Long id, ProjectRequest request, Long userId) {
+    @PreAuthorize("@security.canEditProject(#projectId)")
+    public ProjectResponse updateProject(Long projectId, ProjectRequest request, Long userId) {
 
-        Project project = projectRepository.findAllAccessibleByProject(userId,id).orElseThrow((()->new ResourceNotFoundException("Project",id.toString())));
+        Project project = projectRepository.findAllAccessibleByProject(userId,projectId).orElseThrow((()->new ResourceNotFoundException("Project",projectId.toString())));
         project.setName(request.name());
         project = this.projectRepository.save(project);
         return projectMapper.toProjectResponse(project);
     }
 
     @Override
-    public void softDelete(Long id, Long userId) {
-        Project project = projectRepository.findAllAccessibleByProject(userId,id).orElseThrow((()->new ResourceNotFoundException("Project",id.toString())));
+    @PreAuthorize("@security.canDeleteProject(#projectId)")
+    public void softDelete(Long projectId, Long userId) {
+        Project project = projectRepository.findAllAccessibleByProject(userId,projectId).orElseThrow((()->new ResourceNotFoundException("Project",projectId.toString())));
         project.setDeletedAt(Instant.now());
 //        this.projectRepository.save(project);// since we are using transactional it has become dirty so need to write this
     }
