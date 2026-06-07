@@ -7,8 +7,4 @@ import com.example.aiproject.lovable_clone.dto.Subscriptions.SubscriptionRespons
 
 public interface SubscriptionService {
     SubscriptionResponse getCurrentSubscription(Long userId);
-
-    CheckoutResponse createCheckoutSession(CheckoutRequest request, Long userId);
-
-    PortalResponse openCustomerPortal(Long userId);
 }

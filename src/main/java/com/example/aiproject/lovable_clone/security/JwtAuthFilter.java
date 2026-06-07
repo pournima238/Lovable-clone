@@ -11,6 +11,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.servlet.HandlerExceptionResolver;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -20,23 +21,30 @@ import java.util.ArrayList;
 @RequiredArgsConstructor
 public class JwtAuthFilter extends OncePerRequestFilter {
     private final AuthUtil authUtil;
+
+    private final HandlerExceptionResolver handlerExceptionResolver;
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
-    log.info("incoming request: {}",request.getRequestURI());
-    final String requestHeaderToken = request.getHeader("Authorization");
-    if(requestHeaderToken==null || !requestHeaderToken.startsWith("Bearer ")){
-        filterChain.doFilter(request,response);
-        return;
-    }
-    String jwtToken=requestHeaderToken.split("Bearer ")[1];
-    JwtUserPrincipal userPrincipal = authUtil.verifyAccessToken(jwtToken);
-    // if we have validated token and context does not have info about the user than
-    if(userPrincipal!=null  && SecurityContextHolder.getContext().getAuthentication()==null){
-        UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(
-                userPrincipal,null, new ArrayList<>()
-        );
-        SecurityContextHolder.getContext().setAuthentication(authenticationToken);
-    }
-    filterChain.doFilter(request,response);
+        try {
+            log.info("incoming request: {}", request.getRequestURI());
+            final String requestHeaderToken = request.getHeader("Authorization");
+            if (requestHeaderToken == null || !requestHeaderToken.startsWith("Bearer ")) {
+                filterChain.doFilter(request, response);
+                return;
+            }
+            String jwtToken = requestHeaderToken.split("Bearer ")[1];
+            JwtUserPrincipal userPrincipal = authUtil.verifyAccessToken(jwtToken);
+            // if we have validated token and context does not have info about the user than
+            if (userPrincipal != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+                UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(
+                        userPrincipal, null, new ArrayList<>()
+                );
+                SecurityContextHolder.getContext().setAuthentication(authenticationToken);
+            }
+            filterChain.doFilter(request, response);
+        } catch (Exception e) {
+            handlerExceptionResolver.resolveException(request, response, null, e);
+        }
     }
 }
