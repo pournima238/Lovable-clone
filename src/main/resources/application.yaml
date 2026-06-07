@@ -16,12 +16,14 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
+
 jwt:
-  secret-key: aashgdshbjhdkmhgdkwqulqbdcsdnkjfhql
+  secret-key: ${JWT_SECRET_KEY}
 
 stripe:
   api:
-    secret: sk_test_51TfJD4CIg4ftiynMlqTGWAgQK0XoLu9bvQS2x1jazXUcMNbFMZ7qFYa83GlekgSQsjNhxV8PHQHe1RIvwSyVgoal00Jahjeik9
+    secret: ${STRIPE_SECRET_KEY}
   webhook:
-    secret: whsec_eddd5a482a12631116c637423e9680c8e1ea6f7bd8be3f7a6bf201c55a7b8d07
+    secret: ${STRIPE_WEBHOOK_SECRET}
+
 client.url: http://localhost:8080
