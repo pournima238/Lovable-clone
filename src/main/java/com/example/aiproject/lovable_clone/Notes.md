@@ -483,3 +483,72 @@ custom-built version of ngrok just for Stripe.**
    the site directly from your laptop.
 3. **Mobile App Testing:** If you are building an Android or iOS app that needs to talk to your Spring Boot backend, the
    phone can't always easily reach `localhost`. Ngrok gives the mobile app a real internet URL to connect to.
+
+---
+
+## 13 Stripe Flow
+
+Based on the flowchart in the image, here is a step-by-step explanation of how the subscription payment process works
+using Stripe:
+
+### Overview
+
+The diagram illustrates a standard checkout flow where a user subscribes to a plan using Stripe Checkout. It involves
+your Frontend (**FE**), your Backend (**BE**), and Stripe's infrastructure.
+
+### The Step-by-Step Flow
+
+**1. The User Initiates the Subscription**
+
+* **Action:** The user clicks a button on the Frontend (**FE**) to `subscribe to plan : planA`.
+* *Context:* This is the starting point, as mentioned in the video captions ("front-end will basically click a button
+  somewhere...").
+
+**2. Frontend Requests Checkout Session**
+
+* **Action:** The **FE** sends an API request to your Backend (**BE**) telling it that the user wants to buy "planA".
+
+**3. Backend Communicates with Stripe**
+
+* **Action:** The **BE** uses the **Stripe SDK** to communicate with the main **Stripe** servers. It asks Stripe to
+  create a checkout session (`request a sessionUrl`).
+
+**4. Stripe Returns the Session URL**
+
+* **Action:** Stripe successfully creates a secure, hosted checkout page for this specific transaction and returns the
+  unique `sessionUrl` back to your **BE**.
+
+**5. Backend Forwards the URL**
+
+* **Action:** Your **BE** takes that `sessionUrl` and sends it back to your **FE** (`url`).
+
+**6. Redirect to Payment Gateway**
+
+* **Action:** Your **FE** redirects the user's browser to the **Stripe Payment Gateway**.
+* *Context:* This is the secure Stripe page where the user actually types in their credit card details. This keeps
+  sensitive payment data off your own servers.
+
+**7. Return to the Frontend**
+
+* **Action:** Once the user completes the payment, the Stripe Payment Gateway redirects the user back to your **FE**
+  using a specific `successUrl` (e.g., a "Thank You" or "Payment Successful" page on your website).
+
+**8. Asynchronous Webhooks**
+
+* **Action:** Around the same time the user is redirected, the main **Stripe** server securely communicates directly
+  with your **BE** via **webhooks**.
+* *Context:* This is how Stripe officially informs your backend that the payment was successful so your backend can
+  safely update the user's database record to show they are now subscribed to "planA".
+
+To make stripe cli work which basically listens events and tells to our localhost from our docker the command is this ->
+docker run --rm -it -v "C:\Users\Pournima Thakare\.config\stripe:/root/.config/stripe" stripe/stripe-cli:latest listen
+--forward-to host.docker.internal:8080/webhooks/payment
+
+---
+
+## 13 Subscription and Plan
+
+* One user can have only one subscription. if a user alresy has a subscrition it will take it to customer portal.
+* ![img_1.png](img_1.png)
+* Our subscription table has stripeSubscriptionId
+* Also our Plan has stripe PlanId

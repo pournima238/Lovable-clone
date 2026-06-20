@@ -20,7 +20,7 @@ import java.util.List;
 @NoArgsConstructor
 @Entity
 @Builder
-@Table(name="users")// because Sb already has user and even postgres has
+@Table(name = "users")// because Sb already has user and even postgres has
 public class User implements UserDetails {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -28,6 +28,9 @@ public class User implements UserDetails {
     String username;
     String password;
     String name;
+
+    @Column(unique = true)
+    String stripeCustomerId;
 
     @CreationTimestamp
     Instant createdAt;
