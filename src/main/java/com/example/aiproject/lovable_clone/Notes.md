@@ -564,3 +564,216 @@ docker run --rm -it -v "C:\Users\Pournima Thakare\.config\stripe:/root/.config/s
   the Stripe SDK uses the Builder design pattern to create these parameter objects.
 * So remember when you cancel subscription the current subscription still remains active until the period end.
 * After period ends then the subscription is deleted that is its status becomes cancelled.
+
+---
+
+## 15 Spring AI
+
+**Spring AI** is an official project within the Spring ecosystem designed to make it easy for Java developers to build
+AI-powered applications.
+
+You can think of it as doing for AI what **Spring Data** did for databases. Just like Spring Data lets you swap out
+MySQL for PostgreSQL without rewriting all your database code, Spring AI lets you swap out OpenAI for Google Gemini,
+Anthropic, or a local Ollama model without rewriting all your AI logic.
+
+### Key Features & Concepts
+
+* **Portable API (The "Write Once" philosophy):** Instead of using the specific, proprietary SDKs for OpenAI, Google, or
+  Anthropic, Spring AI gives you a unified `ChatClient` interface. You send a standard `Prompt` object, and Spring AI
+  translates it into the specific API format of the AI provider you configure in your `application.properties`.
+* **Retrieval-Augmented Generation (RAG):** If you want an AI to answer questions based on your own private PDFs,
+  databases, or company documents (instead of just its general internet knowledge), Spring AI provides out-of-the-box
+  tools for:
+    * **Document Readers:** To ingest PDFs, JSON, text files, etc.
+    * **Document Splitters:** To chunk large documents into smaller, searchable pieces.
+    * **Vector Store Integrations:** Native support for storing and searching those chunks in vector databases like
+      PgVector, Pinecone, Chroma, and Neo4j.
+* **Function Calling (Tools):** This allows you to write standard Java methods (e.g., `getWeather(String city)` or
+  `cancelSubscription(String userId)`), annotate them with `@Bean` and `@Description`, and pass them to the AI. The AI
+  can then "decide" to call your Java code during a conversation to fetch real-time data or perform actions.
+* **Structured Output:** Instead of parsing raw text strings returned by an LLM, Spring AI can force the model to return
+  data that perfectly maps to a Java `Record` or `Class` (e.g., asking the AI to extract data from a receipt and return
+  a `ReceiptDTO` object directly).
+
+### A Simple Implementation Example
+
+If you wanted to add Spring AI to your `lovable-clone` project, a basic chat endpoint looks as simple as this:
+
+@RestController
+public class ChatController {
+
+    private final ChatClient chatClient;
+
+    // Spring AI automatically provides the ChatClient.Builder based on your properties
+    public ChatController(ChatClient.Builder chatClientBuilder) {
+        this.chatClient = chatClientBuilder.build();
+    }
+
+    @GetMapping("/ask")
+    public String askAi(@RequestParam String message) {
+        return chatClient.prompt()
+                .user(message)
+                .call()
+                .content(); // Returns the string response from the AI
+    }
+
+}---
+
+## 16 AI-Powered Coding Assistant Architecture
+
+![img_2.png](img_2.png)
+This diagram represents the complete backend flow for an AI-powered coding assistant, showing how a user's prompt goes
+from the frontend, gets enriched with context, is processed by an LLM, and streams back while being saved.
+
+### 1. The Request (Frontend to Spring Boot)
+
+* **The Action:** The user types a prompt in the React Frontend (e.g., "update the color of ProfileCard button to Red").
+* **The API Call:** A POST request is sent to your **Spring Boot Server** containing this `userPrompt`.
+
+### 2. Context Assembly (Preparing the Prompt)
+
+Before the server sends the prompt to the LLM, it must give the LLM context about the project.
+
+* **System Prompt:** It attaches a set of hidden instructions (`guardrails/constraints/rules`). For example, telling the
+  AI how to format its response using XML tags instead of JSON.
+* **Get the File Tree:** It fetches the current structure of the user's project (e.g., a list of files). The LLM needs
+  to know what files exist so it knows what to edit.
+
+### 3. The LLM & Tool Calling (The Brain)
+
+The combined data is sent to the LLM.
+
+* **The Context Window:** The total input (`Input_context_tokens`) equals the `userPrompt` + `System Prompt` +
+  `file_tree` + any actual `files_content`.
+* **The Tool (`get_file_content`):** If the LLM looks at the file tree and realizes it needs to see specific code (like
+  `ProfileCard.tsx`), it triggers a Tool/Function call.
+* **Fetching Data:** The tool requests the file contents from the **Template Bucket (Minio)**. A **circuit-breaker** is
+  used here as a safety mechanism to stop the LLM from entering an infinite loop of requesting files or crashing if
+  Minio goes down.
+
+### 4. Streaming the Response
+
+* Once the LLM figures out the code changes, it starts generating the response.
+* Instead of waiting for the whole response to finish, it uses a **streaming response**.
+* The LLM streams chunks to the Spring Boot server, and Spring Boot immediately forwards that stream via Server-Sent
+  Events (SSE) or WebSockets back to the React Frontend so the user sees the code typing out in real-time.
+
+### 5. Parsing & Storage (Background Work)
+
+While the stream is being sent to the user, the Spring Boot Server is doing heavy lifting in the background:
+
+* **Buffering:** It uses a `StringBuilder` to collect all the streamed chunks into one complete string. It also
+  calculates token usage for billing.
+* **Parsing the Output:** It looks for specific XML-style tags in the AI's response:
+    * `<message>...</message>`: Text meant to be read by the user.
+    * `<file name="src/App.tsx">...</file>`: The actual code changes.
+* **Saving to Database (PostgreSQL):** The text `<message>` (Assistant Message) and the **metadata** of the files are
+  saved instantly to your relational database.
+* **Saving to Object Storage (Minio/S3):** The actual, heavy code contents (`<file>`) are saved into Minio buckets.
+  Writing to Minio is a slower operation compared to the DB, which is why it is decoupled.
+
+### Why XML over JSON?
+
+LLMs are much faster and more reliable at streaming XML/Markdown tags than streaming structured JSON. If a JSON string
+breaks mid-stream, your app crashes trying to parse it. With XML tags, you can easily parse text as it arrives
+line-by-line.
+
+---
+
+## 17 OpenRouter.ai
+
+**OpenRouter.ai** is essentially a "universal adapter" for AI models. It provides a single, unified API that allows you
+to access dozens of different Large Language Models (LLMs) from various providers—like OpenAI (GPT-4), Anthropic (
+Claude), Google (Gemini), and Meta (Llama)—using just one API key and one account.
+
+### Key Benefits for Application Development
+
+* **Write Once, Swap Anywhere:** Instead of writing completely different code bases to communicate with OpenAI's API,
+  Anthropic's API, and others, you write your code once using OpenRouter's API (which adheres to the standard OpenAI
+  payload structure). Switching from GPT-4 to Claude is as seamless as changing a single model name string in your
+  request.
+* **Unified Billing:** Eliminates the overhead of managing credit cards across 10+ different AI platform dashboards. You
+  load credits into a single OpenRouter wallet, and it handles payment distribution across the underlying model
+  providers based on usage.
+* **Fallback Routing:** If primary API servers (e.g., OpenAI) experience a partial outage or severe latency, OpenRouter
+  can be configured to dynamically route your prompt traffic to alternative fallbacks like Anthropic, ensuring high
+  availability for your production application.
+* **Spring AI Integration:** Because OpenRouter mimics the OpenAI API schema, you can configure the native Spring AI
+  OpenAI Chat Client directly in your `application.properties` to target OpenRouter's base URL and endpoint instead.
+  This instantly hooks up your Spring Boot server to a massive universe of open and closed-source models.
+* url - https://openrouter.ai/workspaces
+
+---
+
+## 18 Open Source Reference: AI System Prompts Repository
+
+The GitHub repository `x1xhlol/system-prompts-and-models-of-ai-tools` is a highly popular, curated collection of "
+leaked" or extracted system prompts and internal tool configurations from over 30 mainstream AI tools (including
+Lovable, v0, Cursor, Devin AI, and Perplexity).
+
+### What is a System Prompt?
+
+A system prompt acts as the hidden instructions or the "rulebook" given to an AI model before the user ever interacts
+with it. It dictates the AI's core behavior, tone, guardrails, formatting rules, and exactly how it is allowed to use
+external tools.
+
+### Key Features of the Repository
+
+* **Extensive Coverage:** It contains the full text of system prompts for major IDE agents, autonomous builders, and
+  search tools.
+* **Technical Depth:** Beyond just text prompts, it includes JSON tool-definition files and schemas that reveal exactly
+  how these applications structure their workflows and integrate with specific models.
+* **Version History:** You can track commit history to see how vendors adjust and iterate their system prompts over time
+  to fix AI hallucinations or improve performance.
+
+### How to Use It for Development
+
+* **Improve Prompt Engineering:** Instead of reinventing the wheel, study these advanced prompts. You can borrow proven
+  techniques, such as forcing models to "think step-by-step," defining hyper-specific expert personas, or demanding
+  rigidly structured XML/JSON outputs.
+* **Understand AI Behavior:** If you ever wonder why a specific tool formats its output in a certain way or refuses a
+  request, analyzing its system prompt opens up the "black box" and explains the underlying logic.
+* **Reference for Product Design:** If you are building your own AI features (like your Lovable clone), these prompts
+  provide battle-tested, real-world patterns for context management and tool schemas that have already been scaled to
+  millions of users.
+* **Security Awareness:** The repository highlights that exposed prompts and configurations are a vulnerability. It
+  serves as a reminder to ensure your own internal tools and system instructions are architected securely.
+
+---
+
+## 19 Storage Architecture: PostgreSQL vs. Minio
+
+Choosing between PostgreSQL and Minio depends on the structural shape of the data and the required operational access
+patterns.
+
+### The Core Difference
+
+* **PostgreSQL (Relational Database):** Designed for highly structured, transactional data organized into tables with
+  explicit schemas and relationships. Optimized for rapid queries, indexing, and executing complex joins.
+* **Minio (Object Storage):** An S3-compatible object store built for storing unstructured binary large objects (BLOBs)
+  like images, videos, build artifacts, or raw source code files. Accessible entirely over HTTP REST endpoints.
+
+### Side-by-Side Comparison
+
+| Architectural Attribute   | PostgreSQL                                        | Minio                                                                                                        |
+|:--------------------------|:--------------------------------------------------|:-------------------------------------------------------------------------------------------------------------|
+| **Storage Paradigm**      | Structured rows, tables, foreign keys, JSONB.     | Flat architecture using Buckets and Key-Value lookups.                                                       |
+| **Primary Protocol**      | SQL over native binary protocol (Port `5432`).    | HTTP REST APIs (`GET`, `PUT`, `DELETE` over Port `9000`).                                                    |
+| **Transaction Integrity** | Strict ACID compliance for data consistency.      | Eventual consistency patterns across distributed clusters.                                                   |
+| **Latency & Speed**       | Extremely fast sub-millisecond data manipulation. | Higher latency per request due to HTTP overhead, but optimized for high-throughput streaming of large files. |
+| **Data Mutation**         | In-place updates (mutates existing records).      | Immutable writes (updating a file replaces the object or creates a new version).                             |
+
+### System Decoupling Strategy
+
+In production AI applications, these two storage engines work cooperatively to prevent performance degradation:
+
+1. **PostgreSQL holds the Metadata:** It manages application state, user configurations, access control lists, prompt
+   logs, and the structural **File Tree** (the paths, filenames, and IDs).
+2. **Minio holds the Raw Content:** It stores the heavy, unstructured file text, raw code buffers, and visual assets.
+
+> **Performance Tip:** Never store large text files or raw binaries inside PostgreSQL columns (`text` or `BYTEA`). This
+> causes database bloat, degrades RAM page caching, and slows down database backups. Instead, write the file to Minio,
+> retrieve its unique URL or storage key, and save that string reference inside your PostgreSQL database record.
+
+In this we are not going to use vector store as if we store our files in vector store which llm would semantically
+search upon, llm might get too much or irrelevant data leading to hallucination.

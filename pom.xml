@@ -6,7 +6,7 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
         <version>4.0.5</version>
-        <relativePath/> <!-- lookup parent from repository -->
+        <relativePath/>
     </parent>
     <groupId>com.example.aiproject</groupId>
     <artifactId>lovable-clone</artifactId>
@@ -30,9 +30,23 @@
     <properties>
         <java.version>21</java.version>
         <org.mapstruct.version>1.6.3</org.mapstruct.version>
-        <!-- ADDED: Only the binding version. Spring Boot natively provides ${lombok.version} -->
         <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
+        <!-- ADDED: Spring AI version -->
+        <spring-ai.version>2.0.0</spring-ai.version>
     </properties>
+
+    <!-- ADDED: Spring AI BOM for dependency management -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <dependency>
@@ -48,14 +62,11 @@
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
         </dependency>
-
-        <!-- Kept your original Lombok dependency -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <optional>true</optional>
         </dependency>
-
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa-test</artifactId>
@@ -66,8 +77,6 @@
             <artifactId>spring-boot-starter-webmvc-test</artifactId>
             <scope>test</scope>
         </dependency>
-
-        <!-- MapStruct Core -->
         <dependency>
             <groupId>org.mapstruct</groupId>
             <artifactId>mapstruct</artifactId>
@@ -86,14 +95,12 @@
             <artifactId>jjwt-api</artifactId>
             <version>0.11.5</version>
         </dependency>
-
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-impl</artifactId>
             <version>0.11.5</version>
             <scope>runtime</scope>
         </dependency>
-
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-jackson</artifactId>
@@ -105,6 +112,23 @@
             <artifactId>stripe-java</artifactId>
             <version>32.2.0</version>
             <scope>compile</scope>
+        </dependency>
+
+        <!-- ===== SPRING AI DEPENDENCIES (versions managed by BOM) ===== -->
+
+        <!-- Core Spring AI - ChatClient, Prompt, Message abstractions -->
+        <!-- ===== SPRING AI DEPENDENCIES (versions managed by BOM) ===== -->
+
+        <!-- OpenAI (GPT-4, GPT-4o, etc.) - pulls in spring-ai-core transitively -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-vector-store-pgvector</artifactId>
+            <version>${spring-ai.version}</version>
         </dependency>
     </dependencies>
 
@@ -139,13 +163,11 @@
                                     <artifactId>lombok</artifactId>
                                     <version>${lombok.version}</version>
                                 </path>
-                                <!-- Lombok MapStruct Binding -->
                                 <path>
                                     <groupId>org.projectlombok</groupId>
                                     <artifactId>lombok-mapstruct-binding</artifactId>
                                     <version>${lombok-mapstruct-binding.version}</version>
                                 </path>
-                                <!-- MapStruct Processor -->
                                 <path>
                                     <groupId>org.mapstruct</groupId>
                                     <artifactId>mapstruct-processor</artifactId>
@@ -165,7 +187,6 @@
                                 <path>
                                     <groupId>org.projectlombok</groupId>
                                     <artifactId>lombok</artifactId>
-                                    <!-- Added the version variable here so it doesn't break during tests -->
                                     <version>${lombok.version}</version>
                                 </path>
                             </annotationProcessorPaths>
