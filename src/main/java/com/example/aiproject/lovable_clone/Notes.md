@@ -546,9 +546,21 @@ docker run --rm -it -v "C:\Users\Pournima Thakare\.config\stripe:/root/.config/s
 
 ---
 
-## 13 Subscription and Plan
+## 14 Subscription and Plan
 
 * One user can have only one subscription. if a user alresy has a subscrition it will take it to customer portal.
 * ![img_1.png](img_1.png)
 * Our subscription table has stripeSubscriptionId
 * Also our Plan has stripe PlanId
+* Note susbscription.deleted event will be triggered only at the end of billing cycle
+* The Stripe Customer Portal is a secure, pre-built web page hosted by Stripe that allows your customers to manage their
+  own subscriptions and billing details.
+* Instead of you having to write backend logic and build complex front-end interfaces for billing management from
+  scratch, Stripe provides a ready-made, customizable portal that you can plug directly into your application.
+* In dashboard settings we have billing inside which we have settings for customer portal
+* In the Stripe Java SDK, a "session params" object (formally named SessionCreateParams) is a configuration object used
+  to securely bundle all the settings and data you want to send to Stripe to generate a new session URL. Instead of
+  forcing you to pass a dozen different arguments into a single method call, or manually write a massive JSON payload,
+  the Stripe SDK uses the Builder design pattern to create these parameter objects.
+* So remember when you cancel subscription the current subscription still remains active until the period end.
+* After period ends then the subscription is deleted that is its status becomes cancelled.

@@ -6,9 +6,11 @@ import com.example.aiproject.lovable_clone.dto.Subscriptions.PortalResponse;
 import com.example.aiproject.lovable_clone.entity.Plan;
 import com.example.aiproject.lovable_clone.entity.User;
 import com.example.aiproject.lovable_clone.enums.SubscriptionStatus;
+import com.example.aiproject.lovable_clone.error.BadRequestException;
 import com.example.aiproject.lovable_clone.error.ResourceNotFoundException;
 import com.example.aiproject.lovable_clone.repository.PlanRepository;
 import com.example.aiproject.lovable_clone.repository.UserRepository;
+import com.example.aiproject.lovable_clone.security.AuthUtil;
 import com.example.aiproject.lovable_clone.service.PaymentProcessor;
 import com.example.aiproject.lovable_clone.service.PlanService;
 import com.example.aiproject.lovable_clone.service.SubscriptionService;
@@ -22,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import javax.sound.sampled.Port;
 import java.time.Instant;
 import java.util.Map;
 
@@ -33,6 +36,7 @@ public class StripePaymentProcessor implements PaymentProcessor {
     private final UserRepository userRepository;
     private final SubscriptionService subscriptionService;
     private final PlanService planService;
+    private final AuthUtil authUtil;
 
     @Value("${client.url}")
     private String frontendUrl;
@@ -96,7 +100,22 @@ public class StripePaymentProcessor implements PaymentProcessor {
 
     @Override
     public PortalResponse openCustomerPortal(Long userId) {
-        return null;
+        User user = getUser(userId);
+        String stripeCustomerId = user.getStripeCustomerId();
+        if (stripeCustomerId == null || stripeCustomerId.isEmpty()) {
+            throw new BadRequestException("User does not have a stripe customer id,UserId" + userId);
+        }
+        try {
+            var portalSession = com.stripe.model.billingportal.Session.create(
+                    com.stripe.param.billingportal.SessionCreateParams.builder()
+                            .setCustomer(stripeCustomerId)
+                            .setReturnUrl(frontendUrl)
+                            .build()
+            );
+            return new PortalResponse(portalSession.getUrl());
+        } catch (StripeException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
@@ -106,12 +125,12 @@ public class StripePaymentProcessor implements PaymentProcessor {
             case "checkout.session.completed" ->
                     handleCheckoutSessionCompleted((Session) stripeObject, metadata); //one time when checkout is completed
             case "customer.subscription.updated" ->
-                    handleCustomerSubscriptionUpdated((Subscription) stripeObject);//when used upgrades its subscription
+                    handleCustomerSubscriptionUpdated((Subscription) stripeObject);//when user upgrades its subscription
             case "customer.subscription.deleted" ->
                     handleCustomerSubscriptionDeleted((Subscription) stripeObject);// when subscription ends, revoke the access
             case "invoice.paid" -> handleInvoicePaid((Invoice) stripeObject); //when invoice is paid
             case "invoice.payment_failed" ->
-                    handleInvoicePaymentFailed((Invoice) stripeObject); //when invoice us not paid mark it as failed
+                    handleInvoicePaymentFailed((Invoice) stripeObject); //when invoice is not paid mark it as failed
             default -> log.debug("Ignoring the event {}", type);
         }
     }
