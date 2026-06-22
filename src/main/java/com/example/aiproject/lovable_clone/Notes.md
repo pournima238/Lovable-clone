@@ -705,7 +705,7 @@ Claude), Google (Gemini), and Meta (Llama)—using just one API key and one acco
 
 ---
 
-## 18 Open Source Reference: AI System Prompts Repository
+## 19 Open Source Reference: AI System Prompts Repository
 
 The GitHub repository `x1xhlol/system-prompts-and-models-of-ai-tools` is a highly popular, curated collection of "
 leaked" or extracted system prompts and internal tool configurations from over 30 mainstream AI tools (including
@@ -777,3 +777,150 @@ In production AI applications, these two storage engines work cooperatively to p
 
 In this we are not going to use vector store as if we store our files in vector store which llm would semantically
 search upon, llm might get too much or irrelevant data leading to hallucination.
+
+---
+
+## 20 Spring AI Advisors (ChatClient Interceptors)
+
+The `ChatClient` in Spring AI acts as a fluent API wrapper for interacting with Large Language Models (LLMs). A powerful
+feature of this client is the concept of **Advisors**.
+
+### What are Advisors?
+
+Advisors act as **middleware or interceptors** for your AI requests. They allow you to apply reusable logic or "
+cross-cutting concerns" to your prompt *before* it is sent to the LLM, and to the response *after* it returns.
+
+Instead of scattering custom logic across your application to handle repetitive tasks (like tracking chat history,
+counting tokens, or enforcing security), you configure an Advisor once and attach it directly to the `ChatClient`.
+
+*(Note: Under the hood, Advisors implement the `CallAdvisor` or `StreamAdvisor` interfaces, bringing Aspect-Oriented
+Programming (AOP) principles to the AI call path).*
+
+### Common Built-in Advisors
+
+Spring AI provides several out-of-the-box advisors to solve common AI engineering problems:
+
+1. **`MessageChatMemoryAdvisor` (Conversational Memory)**
+
+* **Problem:** LLMs are stateless by default. If you ask "What is the capital of France?" and follow up with "What is
+  its population?", the LLM will not know what "its" refers to.
+* **Solution:** This advisor intercepts the request, retrieves previous conversation history from a `ChatMemory` store (
+  like an in-memory window or a PostgreSQL database), and dynamically injects those past messages into the current
+  prompt so the AI has full context.
+
+2. **`VectorStoreChatMemoryAdvisor` (Retrieval Augmented Generation - RAG)**
+
+* **Problem:** You want the AI to answer questions based on a massive database of custom documents, but you cannot fit
+  millions of documents into a single prompt's context window.
+* **Solution:** When a user asks a question, this advisor automatically searches a Vector Database for relevant document
+  chunks and seamlessly injects them into the prompt's system instructions before the LLM sees it.
+
+3. **`TokenUsageAdvisor` & `SimpleLoggerAdvisor` (Observability)**
+
+* **Solution:** These intercept the request/response lifecycle to log the raw JSON payloads being sent to the AI
+  provider, or to track exactly how many tokens were consumed for billing and observability purposes.
+
+4. **`SafeGuardAdvisor` (Security)**
+
+* **Solution:** Allows you to define guardrails. The advisor intercepts the user prompt, checks if it violates safety
+  rules, and can block the request from ever reaching the LLM (returning a predefined safe response instead) saving on
+  API costs and preventing misuse.
+
+### Implementation Example
+
+You typically register advisors when building your `ChatClient` using the `.defaultAdvisors()` method. Every prompt sent
+from that client will automatically pass through the defined advisor chain.
+
+@Service
+public class ChatAssistant {
+
+    private final ChatClient chatClient;
+
+    public ChatAssistant(ChatClient.Builder builder, ChatMemory chatMemory) {
+        this.chatClient = builder
+                .defaultSystem("You are a helpful customer support agent.")
+                // Automatically injects chat history into every prompt
+                .defaultAdvisors(new MessageChatMemoryAdvisor(chatMemory))
+                .build();
+    }
+
+    public String chat(String userMessage) {
+        return this.chatClient.prompt()
+                .user(userMessage)
+                .call()
+                .content();
+    }
+
+---
+
+## 21 Understanding StringBuilder
+
+To understand `StringBuilder`, you must understand that standard `String` objects in Java are **immutable** (they cannot
+be changed once created).
+
+### The Immutability Problem
+
+If you concatenate strings in a loop using the `+` operator, Java does not modify the original string. Instead, it
+creates a brand new `String` object in memory for every single iteration and marks the old ones for Garbage Collection.
+For large operations, this causes massive memory bloat and CPU spikes.
+
+### The StringBuilder Solution
+
+`StringBuilder` is a mutable sequence of characters. It acts as an adjustable buffer (like a whiteboard). When you call
+`.append()`, it modifies the *existing* object in memory rather than creating a new one.
+
+**Rule of Thumb:**
+
+* Use standard `String` (and `+`) for simple, one-off concatenations (e.g., `String name = first + " " + last;`). The
+  Java compiler automatically optimizes this anyway.
+* **Always** use `StringBuilder` when concatenating strings inside a `for` or `while` loop, or when buffering streamed
+  network data (like chunks of text arriving from an LLM).
+
+---
+
+## 22 Project Reactor: Schedulers & Thread Management
+
+When transitioning from JavaScript/RxJS to Java's Project Reactor (Spring WebFlux), the biggest paradigm shift is
+managing **Threads**. Unlike JavaScript's single-threaded Event Loop, Java requires you to explicitly assign work to
+different thread pools to prevent your server from crashing.
+
+### The Golden Rule of WebFlux
+
+Spring WebFlux runs on a very small pool of extremely fast threads (Netty threads). Their only job is to handle incoming
+HTTP network traffic. **You must never block these threads.** If you force a Netty thread to wait for a slow database
+query or a file upload, your entire server will freeze and stop accepting new user requests.
+
+### What is a Scheduler?
+
+A `Scheduler` in Project Reactor is a **Thread Manager**. It is the mechanism you use to move heavy, slow, or blocking
+tasks off the main fast threads and onto background worker threads.
+
+### Understanding `Schedulers.boundedElastic()`
+
+Reactor provides several types of schedulers, but `boundedElastic()` is specifically engineered for **blocking I/O tasks
+** (like saving to PostgreSQL, writing to Minio, or calling slow external APIs).
+
+* **Elastic:** It dynamically creates new background worker threads as the workload increases, and destroys them when
+  they sit idle.
+* **Bounded:** It has a safety limit. If thousands of database tasks hit at once, it queues them up rather than creating
+  infinite threads and exhausting your server's RAM.
+
+### Code Implementation Example
+
+When streaming an AI response, appending chunks to a `StringBuilder` is fast enough for the main thread. However, saving
+the final result to the database is slow.
+
+```java
+// ... inside your Flux stream
+.doOnNext(response -> {
+    // FAST: Main thread appends text instantly
+    String content = response.getResult().getOutput().getText();
+    fullResponseBuffer.append(content);
+})
+.doOnComplete(() -> {
+    // SLOW: Database/File storage operations
+    // We hand this off to the background thread pool so the main thread can escape
+    Schedulers.boundedElastic().schedule(() -> {
+        parseAndSaveFiles(fullResponseBuffer.toString(), projectId);
+    });
+})

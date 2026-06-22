@@ -2,8 +2,9 @@ package com.example.aiproject.lovable_clone.controller;
 
 import com.example.aiproject.lovable_clone.dto.project.FileContentResponse;
 import com.example.aiproject.lovable_clone.dto.project.FileNode;
+import com.example.aiproject.lovable_clone.dto.project.FileTreeResponse;
 import com.example.aiproject.lovable_clone.security.AuthUtil;
-import com.example.aiproject.lovable_clone.service.FileService;
+import com.example.aiproject.lovable_clone.service.ProjectFileService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,21 +18,21 @@ import java.util.List;
 @RequiredArgsConstructor
 @RequestMapping("/api/projects/{projectId}/files")
 public class FileController {
-    private final FileService fileService;
+    private final ProjectFileService projectFileService;
     private AuthUtil auth;
 
     @GetMapping
-    public ResponseEntity<List<FileNode>> getFileTree(@PathVariable Long projectId){
+    public ResponseEntity<FileTreeResponse> getFileTree(@PathVariable Long projectId) {
         Long userId = auth.getCurrentUserId();
-        return ResponseEntity.ok(fileService.getFileTree(projectId,userId));
+        return ResponseEntity.ok(projectFileService.getFileTree(projectId, userId));
     }
 
     @GetMapping("/{*path}") //src/hooks/.jsx
-    public ResponseEntity<FileContentResponse>getFile(
-        @PathVariable Long projectId,
-                @PathVariable String path
-    ){
+    public ResponseEntity<FileContentResponse> getFile(
+            @PathVariable Long projectId,
+            @PathVariable String path
+    ) {
         Long userId = auth.getCurrentUserId();
-        return ResponseEntity.ok(fileService.getFileContent(projectId,path, userId));
+        return ResponseEntity.ok(projectFileService.getFileContent(projectId, path, userId));
     }
 }

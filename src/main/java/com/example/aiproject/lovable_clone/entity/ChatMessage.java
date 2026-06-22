@@ -13,7 +13,6 @@ import java.time.Instant;
 @Entity
 @Table(name = "chat_messages")
 @RequiredArgsConstructor
-@NoArgsConstructor
 @AllArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE)
 @Builder
