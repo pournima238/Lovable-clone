@@ -44,17 +44,6 @@ public class ProjectFileServiceImpl implements ProjectFileService {
 
     private static final String BUCKET_NAME = "projects";
 
-
-//    @Override
-//    public List<FileNode> getFileTree(Long projectId, Long userId) {
-//        return List.of();
-//    }
-//
-//    @Override
-//    public FileContentResponse getFileContent(Long projectId, String path, Long userId) {
-//        return null;
-//    }
-
     @Override
     public FileTreeResponse getFileTree(Long projectId) {
         List<ProjectFile> projectFileList = projectFileRepository.findByProjectId(projectId);
@@ -64,7 +53,7 @@ public class ProjectFileServiceImpl implements ProjectFileService {
 
 
     @Override
-    public FileContentResponse getFileContent(Long projectId, String path, Long userId) {
+    public FileContentResponse getFileContent(Long projectId, String path) {
         String objectName = projectId + "/" + path;
         try (
                 InputStream is = minioClient.getObject(

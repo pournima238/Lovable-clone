@@ -33,6 +33,6 @@ public class FileController {
             @PathVariable String path
     ) {
         Long userId = auth.getCurrentUserId();
-        return ResponseEntity.ok(projectFileService.getFileContent(projectId, path, userId));
+        return ResponseEntity.ok(projectFileService.getFileContent(projectId, path));
     }
 }

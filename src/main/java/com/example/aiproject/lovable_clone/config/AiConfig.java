@@ -45,7 +45,7 @@ public class AiConfig {
         return builder
                 .defaultAdvisors(new SimpleLoggerAdvisor())
                 .defaultOptions(OpenAiChatOptions.builder()
-                        .toolChoice("none")
+                        .toolChoice("auto")
                 )
                 .build();
     }

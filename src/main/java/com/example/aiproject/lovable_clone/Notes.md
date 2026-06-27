@@ -926,6 +926,8 @@ the final result to the database is slow.
 })
 ```
 
+---
+
 ## 23 LLM Prefix Caching (Prompt Caching)
 
 Prefix caching (often called **Prompt Caching**) is a system-level optimization used by Large Language Model (LLM)
@@ -989,3 +991,27 @@ Prefix caching is highly effective whenever a large block of text remains static
 
 For this purpose we have used file Tree advisor and have created augment function in which we make sure our system
 prompt is always at first then user message and after that the file tree.
+
+---
+
+### 24 AI Coding Assistant Flow: File Reading
+
+**User:** "make the app dark theme"
+<br>↓
+
+**FileTreeContextAdvisor** injects the file list into the system prompt
+<br>↓
+
+**AI** sees `FILE_TREE`, decides it needs to read `src/App.tsx`
+<br>↓
+
+**AI** calls `read_files(["src/App.tsx"])`
+<br>↓
+
+**CodeGenerationTools** fetches content from MinIO
+<br>↓
+
+**Content** is injected back into the conversation
+<br>↓
+
+**AI** now generates the correct updated file
