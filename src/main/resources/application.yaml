@@ -2,6 +2,10 @@ spring:
   application:
     name: lovable-clone
 
+  mvc:
+    async:
+      request-timeout: 600000
+
   datasource:
     url: jdbc:postgresql://localhost:9010/pgvector-test
     username: user
@@ -16,18 +20,35 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
+
   ai:
     openai:
-      api-key: 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
-      base-url: https://openrouter.ai/api/v1
+      # --- Groq (active) ---
+      api-key: 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
+      base-url: https://api.groq.com/openai/v1
       chat:
+        completions-path: /chat/completions
         options:
-          model: openai/gpt-oss-120b:free
+          model: llama-3.3-70b-versatile
           temperature: 0.0
       http-client:
-        read-timeout: 600000ms
-        connect-timeout: 60000ms
-        connection-request-timeout: 600000ms
+        read-timeout: 600000
+        connect-timeout: 60000
+        connection-request-timeout: 600000
+
+      # --- OpenRouter (commented out) ---
+      # api-key: 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
+      # base-url: https://openrouter.ai/api/v1
+      # chat:
+      #   completions-path: /chat/completions
+      #   options:
+      #     model: openai/gpt-oss-120b:free
+      #     temperature: 0.0
+
+server:
+  tomcat:
+    connection-timeout: 600000
+
 jwt:
   secret-key: ${JWT_SECRET_KEY}
 
@@ -44,8 +65,8 @@ logging:
     org.springframework.ai:
       chat.client: DEBUG
 
-  minio:
-    url: http://localhost:9000
-    access-key: minioadmin
-    secret-key: minioadmin123
-    project-bucket: projects
+minio:
+  url: http://localhost:9002
+  access-key: minioadmin
+  secret-key: minioadmin123
+  project-bucket: projects

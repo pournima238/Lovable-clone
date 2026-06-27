@@ -910,7 +910,7 @@ Reactor provides several types of schedulers, but `boundedElastic()` is specific
 When streaming an AI response, appending chunks to a `StringBuilder` is fast enough for the main thread. However, saving
 the final result to the database is slow.
 
-```java
+```
 // ... inside your Flux stream
 .doOnNext(response -> {
     // FAST: Main thread appends text instantly
@@ -924,3 +924,68 @@ the final result to the database is slow.
         parseAndSaveFiles(fullResponseBuffer.toString(), projectId);
     });
 })
+```
+
+## 23 LLM Prefix Caching (Prompt Caching)
+
+Prefix caching (often called **Prompt Caching**) is a system-level optimization used by Large Language Model (LLM)
+providers to reduce latency, compute costs, and energy consumption. It works by temporarily storing the expensive
+computational states of text that appears at the very beginning (the prefix) of multiple prompts.
+
+### The "Re-reading the Book" Analogy
+
+Imagine you are asked to answer specific questions about a 500-page manual.
+
+* **Without Caching:** Every time you are asked a new question, you have to read the entire 500-page manual from page 1,
+  plus the new question, before you can start answering.
+* **With Caching:** You read the 500-page manual once and keep the knowledge fresh in your short-term memory. When a new
+  question arrives, you only read the new question. You can start answering immediately.
+
+### How It Works Technically: The KV Cache
+
+To understand prefix caching, you need to understand how LLMs process text:
+
+1. **The Prefill Phase:** When you send a prompt, the LLM reads all the input tokens simultaneously. The model's
+   Attention mechanism calculates complex mathematical vectors called **Keys (K)** and **Values (V)** for every single
+   token to understand the context. This phase requires massive parallel GPU computation.
+2. **The KV Cache:** Once calculated, these Key and Value vectors are temporarily stored in the GPU's memory (VRAM).
+   This is the "KV Cache."
+3. **The Optimization:** Normally, the KV Cache is wiped clean after your response is generated. With Prefix Caching,
+   the server intentionally retains the KV Cache for the beginning sequence of your tokens (the prefix). If your next
+   prompt starts with the **exact same tokens**, the LLM skips the heavy "Prefill" phase for that section, loads the
+   cache from RAM, and only calculates the KV vectors for the new, unique tokens at the end.
+
+### Key Benefits
+
+* **Reduced Time-To-First-Token (TTFT):** Because the model skips reading the heavy system instructions or document
+  context, it starts streaming the response back to your frontend much faster.
+* **Cost Efficiency:** Processing cached tokens requires significantly less computational power. Many API providers (
+  like Anthropic or OpenAI) charge substantially less (often 50% less) for cached input tokens compared to uncached
+  ones.
+
+### Common Use Cases
+
+Prefix caching is highly effective whenever a large block of text remains static across multiple requests:
+
+* **Massive System Prompts:** Prepending a huge rulebook or coding style guide to every user query.
+* **Retrieval-Augmented Generation (RAG):** Passing a large, static PDF into the context window and asking the user to
+  chat with it. The PDF is cached; only the chat messages change.
+* **Multi-Turn Chat:** As a conversation grows, the earlier messages become a static prefix, making long conversations
+  cheaper to maintain.
+
+### The Golden Rules of Caching
+
+1. **Strict Exact Matching:** The cache only works if the prefix is *exactly* the same, character for character.
+   Changing a single comma or whitespace at the very beginning of the prompt invalidates the cache for everything that
+   follows it.
+2. **Order Matters:** The cached text must appear at the absolute beginning of the prompt.
+
+* ✅ **Cached:** `[Huge Static Codebase] + "Update the Profile button."`
+* ❌ **Not Cached:** `"Update the Profile button." + [Huge Static Codebase]` *(The dynamic part broke the exact match at
+  the start).*
+
+3. **Cache Eviction:** Because GPU memory is limited, providers typically evict (delete) caches that haven't been used
+   recently (usually within 5 to 60 minutes).
+
+For this purpose we have used file Tree advisor and have created augment function in which we make sure our system
+prompt is always at first then user message and after that the file tree.

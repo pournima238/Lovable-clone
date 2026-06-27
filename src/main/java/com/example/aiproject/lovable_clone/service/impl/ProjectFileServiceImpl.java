@@ -56,7 +56,7 @@ public class ProjectFileServiceImpl implements ProjectFileService {
 //    }
 
     @Override
-    public FileTreeResponse getFileTree(Long projectId, Long userId) {
+    public FileTreeResponse getFileTree(Long projectId) {
         List<ProjectFile> projectFileList = projectFileRepository.findByProjectId(projectId);
         List<FileNode> projectFileNodes = projectFileMapper.toListOfFileNode(projectFileList);
         return new FileTreeResponse(projectFileNodes);

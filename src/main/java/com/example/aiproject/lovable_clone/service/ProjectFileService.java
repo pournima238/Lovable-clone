@@ -7,11 +7,8 @@ import com.example.aiproject.lovable_clone.dto.project.FileTreeResponse;
 import java.util.List;
 
 public interface ProjectFileService {
-//    List<FileNode> getFileTree(Long projectId, Long userId);
 
-//    FileContentResponse getFileContent(Long projectId, String path, Long userId);
-
-    FileTreeResponse getFileTree(Long projectId, Long userId);
+    FileTreeResponse getFileTree(Long projectId);
 
     FileContentResponse getFileContent(Long projectId, String path, Long userId);
 

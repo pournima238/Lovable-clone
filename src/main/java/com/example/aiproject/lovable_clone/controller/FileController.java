@@ -24,7 +24,7 @@ public class FileController {
     @GetMapping
     public ResponseEntity<FileTreeResponse> getFileTree(@PathVariable Long projectId) {
         Long userId = auth.getCurrentUserId();
-        return ResponseEntity.ok(projectFileService.getFileTree(projectId, userId));
+        return ResponseEntity.ok(projectFileService.getFileTree(projectId));
     }
 
     @GetMapping("/{*path}") //src/hooks/.jsx

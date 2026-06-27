@@ -45,10 +45,10 @@ public class SubscriptionServiceImpl implements SubscriptionService {
                 .map(subscriptionMapper::toSubscriptionResponse)
                 // 2. Provide the default DTO if the Optional is empty
                 .orElseGet(() -> new SubscriptionResponse(
-                        new PlanResponse(null, null, null, null, null, null, null),
+                        null, // Pass null instead of an empty PlanResponse object
                         "none",
                         null,
-                        0L // 3. Use '0L' instead of '0' since tokenUsedThisCycle is a Long
+                        0L
                 ));
     }
 

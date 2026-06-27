@@ -16,6 +16,7 @@ import com.example.aiproject.lovable_clone.repository.ProjectRepository;
 import com.example.aiproject.lovable_clone.repository.UserRepository;
 import com.example.aiproject.lovable_clone.security.AuthUtil;
 import com.example.aiproject.lovable_clone.service.ProjectService;
+import com.example.aiproject.lovable_clone.service.ProjectTemplateService;
 import com.example.aiproject.lovable_clone.service.SubscriptionService;
 import jakarta.transaction.Transactional;
 import lombok.AccessLevel;
@@ -40,6 +41,7 @@ public class ProjectServiceImpl implements ProjectService {
     ProjectMapper projectMapper;
     ProjectMemberRepository projectMemberRepository;
     SubscriptionService subscriptionService;
+    ProjectTemplateService projectTemplateService;
 
     @Override
     public List<ProjectSummaryResponse> getAllProjects(Long userId) {
@@ -71,6 +73,9 @@ public class ProjectServiceImpl implements ProjectService {
 
         // SAVE PROJECT FIRST
         project = projectRepository.save(project);
+
+        //to save starter project template in minio
+        projectTemplateService.initializeProjectFromTemplate(project.getId());
 
         // NOW project has generated ID
         ProjectMemberId projectMemberId =

@@ -1,3 +1,4 @@
+// StorageConfig.java - keep this exactly as your original was
 package com.example.aiproject.lovable_clone.config;
 
 import io.minio.MinioClient;
@@ -7,9 +8,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@ConfigurationProperties(prefix = "minio") // will check configurations application.yml file and populate the data here
+@ConfigurationProperties(prefix = "minio")
 @Data
 public class StorageConfig {
+
     private String url;
     private String accessKey;
     private String secretKey;
