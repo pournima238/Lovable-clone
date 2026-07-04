@@ -1015,3 +1015,598 @@ prompt is always at first then user message and after that the file tree.
 <br>↓
 
 **AI** now generates the correct updated file
+
+## 25 Code Generation Flow — Lovable Clone
+
+### Overview
+
+The system lets users send a chat message like *"make a task manager app"* and the backend streams AI-generated React
+code back, saves the files to MinIO, and tracks them in PostgreSQL.
+
+---
+
+### Entry Point — `ChatController.java`
+
+```
+POST /api/chat/stream
+```
+
+Receives `{ message, projectId }`, creates an `SseEmitter` (10 min timeout), subscribes to the reactive stream from
+`AiGenerationService`, and pushes each chunk to the client as Server-Sent Events. Returns the emitter immediately while
+streaming continues in the background.
+
+> **Important:** We use `spring-boot-starter-webmvc` (servlet stack), NOT WebFlux. This means we must use `SseEmitter`
+> and manually call `.subscribe()` on the Flux. Returning `Flux<ServerSentEvent>` directly only works with WebFlux. This
+> was a key bug — the Flux was being built but never subscribed to, causing instant empty responses.
+
+---
+
+### Core Service — `AiGenerationServiceImpl.java`
+
+The heart of the system. Key things it does:
+
+**1. Builds the prompt:**
+
+```java
+Flux.defer(() ->{
+        return chatClient.
+
+prompt()
+        .
+
+system(PromptUtils.CODE_GENERATION_SYSTEM_PROMPT)
+        .
+
+user(userMessage)
+        .
+
+tools(codeGenerationTools)        // gives AI ability to read files
+        .
+
+advisors(fileTreeContextAdvisor)  // injects file tree into context
+        .
+
+advisors(advisorSpec ->advisorSpec.
+
+params(advisorParams)) // passes projectId/userId
+        .
+
+stream()
+        .
+
+content();
+})
+```
+
+> **Why `Flux.defer()`?** It ensures the entire chain is built and executed fresh on each subscription. Required for
+> correct behavior in the WebMVC + reactive streams combination.
+
+**2. Buffers the full response using `AtomicReference<StringBuilder>`:**
+
+```java
+AtomicReference<StringBuilder> bufferRef = new AtomicReference<>(new StringBuilder());
+// each chunk appended in doOnNext()
+```
+
+> **Why `AtomicReference`?** `doOnNext` can fire from different threads in a reactive pipeline. `AtomicReference`
+> ensures thread-safe access to the buffer.
+
+**3. On completion, parses and saves files:**
+
+```java
+// Regex extracts file content from AI response
+Pattern.compile("<file path=\"([^\"]+)\">(.*?)</file>",Pattern.DOTALL)
+
+// saves each file to MinIO + PostgreSQL
+parseAndSaveFiles(fullResponse, projectId);
+```
+
+---
+
+### System Prompt — `PromptUtils.java`
+
+Tells the AI:
+
+- Use **only** React 18 + TypeScript + Vite + Tailwind CSS 4 + daisyUI v5 + lucide-react. Never import antd, @mui, or
+  anything else.
+- Respond in strict XML format using `<message>`, `<tool>`, `<file>` tags
+- Always read existing files via `<tool>` before editing them
+- Never hallucinate file contents — always read first
+- Dark theme via `data-theme="dark"` on root element
+- Max 100 lines per file, no TODOs, no hardcoded colors
+
+> **Important:** Do NOT use `LocalDateTime.now()` inside the static prompt field. Since it is evaluated at class load
+> time, it never updates and wastes tokens. It was also a cause of unnecessarily long prompts.
+
+---
+
+### File Tree Advisor — `FileTreeContextAdvisor.java`
+
+Implements `StreamAdvisor` with `getOrder() = -1` (runs before `SimpleLoggerAdvisor` which defaults to 0).
+
+**What it does:** Before every AI call, fetches all files for the project from PostgreSQL and injects them into the
+system prompt:
+
+```
+---- FILE_TREE ----
+[FileNode(path=src/App.tsx), FileNode(path=src/main.tsx), ...]
+```
+
+This tells the AI what files exist so it can decide which ones to read/modify.
+
+**How it works:**
+
+```java
+// Strips system messages, adds file tree as new SystemMessage, re-adds user messages
+return request.mutate()
+    .
+
+prompt(new Prompt(allMessages, request.prompt().
+
+getOptions()))
+        .
+
+build();
+```
+
+**Critical ordering rule for prompt caching:**
+The advisor always assembles messages in this order:
+
+1. Original system message (static — gets prefix cached)
+2. File tree system message
+3. User messages (dynamic)
+
+This ensures the large static system prompt is always at the prefix position, making it eligible for LLM prefix caching.
+
+> **Important Spring AI 2.0.0 Bug:** Passing both `.advisors(myAdvisor)` and `.params()` inside the same lambda silently
+> drops the advisor. Always split them into two separate `.advisors()` calls:
+> ```java
+> .advisors(fileTreeContextAdvisor)          // register advisor
+> .advisors(advisorSpec -> advisorSpec.params(advisorParams))  // pass params
+> ```
+
+---
+
+### File Reading Tool — `CodeGenerationTools.java`
+
+Not a Spring `@Component` — instantiated manually per request with the specific `projectId`:
+
+```java
+CodeGenerationTools codeGenerationTools = new CodeGenerationTools(projectFileService, projectId);
+```
+
+The `@Tool` annotated method `readFiles(List<String> paths)` is called by the AI when it outputs
+`<tool args="src/App.tsx">`. Spring AI intercepts this, calls the method, fetches file content from MinIO, and injects
+the result back into the conversation so the AI can read actual file contents before generating code.
+
+**Required dependency in `pom.xml` (not pulled transitively — must be added manually):**
+
+```xml
+
+<dependency>
+    <groupId>com.github.victools</groupId>
+    <artifactId>jsonschema-module-jackson</artifactId>
+    <version>4.36.0</version>
+</dependency>
+<dependency>
+<groupId>com.github.victools</groupId>
+<artifactId>jsonschema-generator</artifactId>
+<version>4.36.0</version>
+</dependency>
+```
+
+> Spring AI 2.0.0 uses `victools` to convert `@Tool` annotated methods into JSON schemas for the LLM. Without this
+> dependency you get `NoClassDefFoundError: JacksonSchemaModule` and the entire stream fails silently.
+
+---
+
+### File Storage — `ProjectFileServiceImpl.java`
+
+Two key operations:
+
+- **Save:** Uploads content to MinIO at `projects/{projectId}/{filePath}` and upserts a `ProjectFile` record in
+  PostgreSQL with the path and MinIO object key.
+- **Get file tree:** Queries PostgreSQL for all `ProjectFile` records for a project, maps them to `FileNode` objects —
+  this is what `FileTreeContextAdvisor` uses.
+- **Get content:** Downloads file bytes from MinIO by object key and returns as string — this is what
+  `CodeGenerationTools.readFiles()` calls.
+
+---
+
+### Project Template — `ProjectTemplateServiceImpl.java`
+
+Called when a new project is created. Copies all files from:
+
+```
+starter-projects/react-starter/
+```
+
+to:
+
+```
+projects/{projectId}/
+```
+
+Using MinIO server-side copy (fast — no download/upload needed), then saves `ProjectFile` records to PostgreSQL so the
+file tree is immediately populated for the AI.
+
+The starter template contains: `index.html`, `package.json`, `vite.config.ts`, `tsconfig.json`, `tsconfig.node.json`,
+`src/main.tsx`, `src/App.tsx`, `src/index.css`, `src/vite-env.d.ts`.
+
+---
+
+### Config — `AiConfig.java`
+
+```java
+.defaultOptions(OpenAiChatOptions.builder()
+    .
+
+toolChoice("auto"))  // ← CRITICAL
+```
+
+| Value        | Behavior                                                                 |
+|--------------|--------------------------------------------------------------------------|
+| `"none"`     | Model is blocked from calling any tools — causes instant empty responses |
+| `"auto"`     | Model decides when to call tools (correct)                               |
+| `"required"` | Model must always call a tool                                            |
+
+> `toolChoice("none")` was the root cause of the empty response bug. Always use `"auto"` when tools are registered.
+
+**LLM Provider:** Groq (`https://api.groq.com/openai/v1`) with model `llama-3.3-70b-versatile`. Groq's free tier gives
+14,400 req/day with no stream timeouts, making it far more reliable than OpenRouter free models for streaming.
+
+---
+
+### Key Dependencies in `pom.xml`
+
+```xml
+spring-ai-starter-model-openai              <!-- ChatClient, streaming -->
+        spring-ai-starter-vector-store-pgvector     <!-- PgVector (future RAG use) -->
+        jsonschema-module-jackson                   <!-- REQUIRED for @Tool registration -->
+        jsonschema-generator                        <!-- REQUIRED for @Tool registration -->
+        minio                                       <!-- file storage -->
+```
+
+---
+
+### Complete Request Flow
+
+```
+POST /api/chat/stream
+        ↓
+ChatController → creates SseEmitter, calls .subscribe() on Flux
+        ↓
+Flux.defer() builds the chain fresh on subscription
+        ↓
+FileTreeContextAdvisor (order=-1) → fetches all project files from PostgreSQL
+                                  → injects FILE_TREE into system prompt
+        ↓
+ChatClient sends augmented request to Groq
+        ↓
+AI sees FILE_TREE, decides to read src/App.tsx
+AI outputs: <tool args="src/App.tsx">
+        ↓
+Spring AI intercepts tool call → CodeGenerationTools.readFiles()
+        ↓
+File content fetched from MinIO, injected back into conversation
+        ↓
+AI generates: <file path="src/App.tsx">...updated code...</file>
+        ↓
+Chunks streamed back → SseEmitter.send() → client sees real-time output
+        ↓
+doOnComplete() → Schedulers.boundedElastic() → parseAndSaveFiles()
+        ↓
+Regex extracts <file> tags → saved to MinIO + PostgreSQL
+```
+
+---
+
+### Common Bugs & Fixes Encountered
+
+| Bug                                         | Root Cause                                                    | Fix                                                            |
+|---------------------------------------------|---------------------------------------------------------------|----------------------------------------------------------------|
+| Empty response (88-99ms)                    | `toolChoice("none")` blocking all tool calls                  | Change to `toolChoice("auto")`                                 |
+| `NoClassDefFoundError: JacksonSchemaModule` | Missing `victools` dependency                                 | Add `jsonschema-module-jackson` to pom.xml                     |
+| Advisor not being applied                   | Both advisor + params inside same lambda                      | Split into two separate `.advisors()` calls                    |
+| `Flux` never subscribed                     | Returning `Flux` directly in WebMVC (needs WebFlux)           | Use `SseEmitter` + `.subscribe()` in controller                |
+| Circular bean creation error                | `@PostConstruct` calling `minioClient()` method on same class | Extract bucket init to separate `StorageInitializer` component |
+| Stream timeout mid-response                 | OpenRouter free model rate limits                             | Switched to Groq free tier                                     |
+| Model hallucinating imports (antd, @mui)    | System prompt not explicitly banning external libraries       | Added strict stack list to system prompt                       |
+
+## 26 The N+1 Problem
+
+### The Simple Explanation
+
+The N+1 problem is when your code makes **1 query to get a list**, then makes **N more queries** (one for each item in
+that list) to get related data — when it could have fetched everything in **just 1 query**.
+
+---
+
+### Real World Analogy
+
+Imagine you are a teacher and you want to know **which city every student in your class lives in**.
+
+**The N+1 Way (Bad):**
+
+1. You ask the class: *"Can everyone write their name on the board?"* → **1 question**
+2. Then you call each student one by one: *"John, where do you live?"* → *"Sarah, where do you live?"* → *"Mike, where
+   do you live?"* ...
+
+If you have 30 students, you asked **31 questions total (1 + 30)**.
+
+**The Smart Way (Good):**
+
+1. You just ask once: *"Can everyone write their name AND city on the board?"* → **1 question, done.**
+
+---
+
+### Code Example
+
+Say you have `Project` and `ProjectMember` — one project has many members.
+
+**The N+1 Way:**
+
+```java
+// Query 1: fetch all projects
+List<Project> projects = projectRepository.findAll();
+
+for(
+Project project :projects){
+// Query 2, 3, 4... N+1: fetch members for EACH project separately
+List<ProjectMember> members = memberRepository.findByProjectId(project.getId());
+    System.out.
+
+println(project.getName() +" has "+members.
+
+size() +" members");
+        }
+```
+
+If you have 50 projects, this fires **51 queries** to the database:
+
+```sql
+SELECT *
+FROM projects; -- 1 query
+SELECT *
+FROM project_members
+WHERE project_id = 1; -- query for project 1
+SELECT *
+FROM project_members
+WHERE project_id = 2; -- query for project 2
+SELECT *
+FROM project_members
+WHERE project_id = 3;
+-- query for project 3
+-- ... 47 more queries
+```
+
+**The Fix — JOIN everything in 1 query:**
+
+```java
+// Using JPA with JOIN FETCH
+@Query("SELECT p FROM Project p JOIN FETCH p.members")
+List<Project> findAllWithMembers();
+```
+
+This fires just **1 query:**
+
+```sql
+SELECT p.*, pm.*
+FROM projects p
+         JOIN project_members pm ON pm.project_id = p.id;
+```
+
+---
+
+### Why It's Dangerous
+
+It's sneaky because it **works fine locally** with 5 projects. But in production with 10,000 projects, your server
+suddenly fires **10,001 database queries per request** — your database gets overwhelmed and your API slows to a crawl.
+
+---
+
+### How to Spot It
+
+In your project you have `show-sql: true` in `application.yaml`. If you ever see the **same query repeating in a loop**
+in your logs with different IDs, that's the N+1 problem:
+
+```sql
+SELECT *
+FROM project_members
+WHERE project_id = 1
+SELECT *
+FROM project_members
+WHERE project_id = 2
+SELECT *
+FROM project_members
+WHERE project_id = 3
+-- this repeating is the red flag
+```
+
+---
+
+### The Fixes in JPA/Spring Boot
+
+| Fix                                 | When to Use                                             |
+|-------------------------------------|---------------------------------------------------------|
+| `JOIN FETCH` in JPQL                | When you always need the related data                   |
+| `@EntityGraph` on repository method | Cleaner alternative to JOIN FETCH                       |
+| `@BatchSize(size = 25)`             | Loads related entities in batches instead of one by one |
+| DTO projections with a single query | Best for read-heavy endpoints                           |
+
+The most common fix you'll use is `JOIN FETCH`:
+
+```java
+
+@Query("SELECT p FROM Project p JOIN FETCH p.members WHERE p.id = :id")
+Optional<Project> findByIdWithMembers(@Param("id") Long id);
+```
+
+---
+
+```markdown
+## 27 Chat Persistence Flow — Saving Messages & Events
+
+### Overview
+
+After the AI finishes streaming its response, the backend persists the full conversation in the background using
+`Schedulers.boundedElastic()` so the main thread is never blocked.
+
+---
+
+### Entity Hierarchy
+
+```
+
+ChatSession (projectId + userId — composite key)
+└── ChatMessage (USER or ASSISTANT role)
+└── ChatEvent (THOUGHT | MESSAGE | FILE_EDIT | TOOL_LOG)
+
+```
+
+- One `ChatSession` per user per project.
+- One `ChatMessage` per turn (user sends one, assistant sends one).
+- One `ChatMessage` has many `ChatEvent`s — the structured breakdown of what the AI actually did.
+
+---
+
+### Why ChatEvents Instead of Raw Text?
+
+The AI responds in structured XML:
+
+```xml
+<message phase="planning">I will update App.tsx...</message>
+<tool args="src/App.tsx">Reading file...</tool>
+<file path="src/App.tsx">...full file content...</file>
+<message phase="completed">Done!</message>
+```
+
+Saving this as a raw string is useless for the frontend. Instead, `LlmResponseParser` uses regex to break it into typed
+`ChatEvent` records so the frontend can render each part differently (thought bubble, chat bubble, file diff, tool log).
+
+---
+
+### The Complete Save Flow
+
+```
+doOnComplete() fires
+    ↓
+Schedulers.boundedElastic().schedule()   ← background thread, never blocks Netty
+    ↓
+finalizeChats(userMessage, chatSession, fullText, duration, usage)
+    ↓
+┌─────────────────────────────────────────────────────┐
+│ 1. Record token usage → UsageLog (daily counter)    │
+│ 2. Save USER ChatMessage (with promptTokens)        │
+│ 3. Save ASSISTANT ChatMessage (with completionTokens)│
+│ 4. Parse full AI response → List<ChatEvent>         │
+│ 5. Prepend THOUGHT event ("Thought for Xs")         │
+│ 6. FILE_EDIT events → projectFileService.saveFile() │
+│ 7. saveAll(chatEventList) → batch insert            │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+### LlmResponseParser — How Parsing Works
+
+Uses a single regex to match all three XML tag types in one pass:
+
+```java
+Pattern.compile("(<(message|file|tool)([^>]*)>)([\\s\\S]*?)(</\\2>)")
+```
+
+| Tag                 | Maps To                   | Extra Fields                      |
+|---------------------|---------------------------|-----------------------------------|
+| `<message>`         | `ChatEventType.MESSAGE`   | content = markdown text           |
+| `<file path="...">` | `ChatEventType.FILE_EDIT` | filePath extracted from attribute |
+| `<tool args="...">` | `ChatEventType.TOOL_LOG`  | args stored in metadata           |
+
+A `THOUGHT` event is always prepended manually with `sequenceOrder = 0` and content `"Thought for Xs"` where X is the
+time between request sent and first token received.
+
+---
+
+### ChatSession — Created Lazily
+
+```
+streamResponse() called
+    ↓
+createChatSessionIfNotExists(projectId, userId)
+    ↓
+Lookup by composite key (ChatSessionId)
+    ├── Found → reuse existing session
+    └── Not found → create new ChatSession and save
+```
+
+This means the first message to a project creates the session; all subsequent messages reuse it.
+
+---
+
+### Fetching Chat History
+
+`GET /api/chat/projects/{projectId}` → `ChatServiceImpl.getProjectChatHistory()`
+
+Uses a single `JOIN FETCH` query to avoid the N+1 problem:
+
+```java
+@Query("""
+        SELECT DISTINCT m FROM ChatMessage m
+        LEFT JOIN FETCH m.events e
+        WHERE m.chatSession = :chatSession
+        ORDER BY m.createdAt ASC, e.sequenceOrder ASC
+        """)
+```
+
+This fetches all messages **and** their events in one query, ordered correctly for rendering.
+
+---
+
+### Key Design Decisions
+
+| Decision                                    | Reason                                                                           |
+|---------------------------------------------|----------------------------------------------------------------------------------|
+| Save on `doOnComplete`, not during stream   | Can't write to DB mid-stream; full text needed for regex parsing                 |
+| `boundedElastic()` for DB writes            | DB calls are blocking I/O — must never run on Netty threads                      |
+| Batch `saveAll()` for events                | One INSERT per event would be N+1 writes; batch is one round trip                |
+| THOUGHT event prepended in code, not parsed | AI never outputs a `<thought>` tag; duration is calculated server-side           |
+| FILE_EDIT triggers file save                | Parser and file persistence are coupled here intentionally — one source of truth |
+
+### Null-Result Chunks During Tool Calls
+
+When the AI calls a tool (e.g. `read_files`), Spring AI emits intermediate `ChatResponse` chunks where `getResult()`
+returns `null`. These are internal bookkeeping chunks carrying tool-call metadata, not actual text.
+
+**Always filter these out before your processing logic:**
+
+```java
+.stream()
+.
+
+chatResponse()
+.
+
+filter(response ->response !=null
+        &&response.
+
+getResult() !=null
+        &&response.
+
+getResult().
+
+getOutput() !=null)  // ← drops tool-call meta-chunks
+        .
+
+doOnNext(response ->{
+// safe — getResult() is guaranteed non-null here
+String content = response.getResult().getOutput().getText();
+    fullResponseBuffer.
+
+append(content !=null?content:"");
+})
+```
+
+Without this filter, placing `getResult().getOutput().getText()` before a null check causes an immediate
+`NullPointerException` and crashes the stream.
+
+```

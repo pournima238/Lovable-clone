@@ -3,8 +3,10 @@ package com.example.aiproject.lovable_clone.service;
 import com.example.aiproject.lovable_clone.dto.Subscriptions.PlanLimitsResponse;
 import com.example.aiproject.lovable_clone.dto.Subscriptions.UsageTodayResponse;
 
-public interface UsageService {
-    UsageTodayResponse getTodayUsage(Long userId);
+import org.jspecify.annotations.Nullable;
 
-    PlanLimitsResponse getCurrentSubscriptionLimitsOfUser(Long userId);
+public interface UsageService {
+    void recordTokenUsage(Long userId, int actualTokens);
+
+    void checkDailyTokensUsage();
 }
