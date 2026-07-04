@@ -1608,5 +1608,197 @@ append(content !=null?content:"");
 
 Without this filter, placing `getResult().getOutput().getText()` before a null check causes an immediate
 `NullPointerException` and crashes the stream.
+``
+---
+
+## 28 Code Execution System Architecture — Live Preview
+
+![img_3.png](img_3.png)
 
 ```
+┌─────────────┐        /deploy/36         ┌─────────────────┐
+│  Frontend   │ ───────────────────────→  │  Spring Backend │
+│             │ ←─── returns preview URL ─ │  (orchestrator) │
+└─────────────┘                           └────────┬────────┘
+       │                                           │ fabric8
+       │ opens URL                                 ↓
+       │                                  ┌─────────────────┐
+       │                                  │   Kubernetes    │
+       │                                  │   Pod 36        │
+       ↓                                  │  runner+syncer  │
+┌─────────────┐   Redis lookup            └────────┬────────┘
+│   Reverse   │ ──────────────→ 192.244.1.16:5173  │
+│   Proxy     │ ←────────────────────────────────── │
+└─────────────┘
+```
+
+### The Problem
+
+In the Lovable clone, the user chats with the AI, the AI generates React code, and the user needs to see a
+**live preview** of that React app running in real time.
+
+You can't run it in the browser directly (no Node.js). You can't run all projects on one shared server (security
+nightmare). So you need **one isolated environment per project** that runs `npm run dev` and serves the Vite preview.
+That's exactly what this architecture solves.
+
+---
+
+### The Complete Flow
+
+```
+User clicks Preview on Project 36
+        ↓
+POST /deploy/36 → Spring Backend
+        ↓
+Fetch code files from MinIO
+        ↓
+fabric8 K8s client creates Pod 36
+    ├── runner container → npm run dev → Vite server on :5173
+    └── syncer container → watches MinIO for file changes
+        ↓
+Pod 36 gets IP: 192.244.1.16:5173
+        ↓
+Spring Backend writes to Redis:
+    project-36.app.domain.com → 192.244.1.16:5173
+        ↓
+User visits project-36.app.domain.com
+        ↓
+Reverse Proxy reads Redis → forwards to 192.244.1.16:5173
+        ↓
+User sees live React app
+        ↓
+AI edits file → saved to MinIO → syncer picks up → HMR → preview updates
+```
+
+---
+
+### Step-by-Step Breakdown
+
+**Step 1 — Frontend calls Spring Backend**
+
+```
+Frontend → POST /deploy/36
+```
+
+The `36` is the `projectId`. Spring Backend receives this and finds or spins up a running environment for project 36.
+
+---
+
+**Step 2 — Spring Backend fetches code from MinIO**
+
+All AI-generated files are already saved in MinIO at:
+
+```
+projects/36/src/App.tsx
+projects/36/src/index.css
+projects/36/package.json
+```
+
+MinIO also pulls npm dependencies from the npm registry so the container has everything it needs.
+
+---
+
+**Step 3 — Kubernetes creates a Pod for Project 36**
+
+Spring Backend uses the **fabric8 Kubernetes client** (a Java library) to programmatically create the pod:
+
+```java
+k8sClient.runCommand("npm install","pod36","runner");
+```
+
+Each pod has **two containers**:
+
+- **runner** — runs `npm run dev`, starts Vite dev server on `:5173`, enables HMR
+- **syncer** — watches MinIO for file changes; when AI saves a new file, syncer triggers HMR so the preview
+  updates live without a refresh
+
+Pod 36 gets its own internal IP:
+
+```
+192.244.1.16:5173
+```
+
+---
+
+**Step 4 — Redis stores the routing mapping**
+
+Once the pod is running, Spring Backend saves this into Redis:
+
+```
+project-36.app.yourdomain.com → 192.244.1.16:5173
+```
+
+Redis is used here because it is extremely fast. Every single preview page load hits this lookup — a PostgreSQL
+query would be too slow.
+
+---
+
+**Step 5 — User visits the preview URL**
+
+The Reverse Proxy (Nginx or Traefik) catches all `*.app.yourdomain.com` traffic, reads Redis:
+
+```
+project-36 → 192.244.1.16:5173
+```
+
+And forwards the request directly to that pod. The user sees their live React app.
+
+---
+
+**Step 6 — AI edits a file, preview updates live**
+
+```
+User: "make the button red"
+        ↓
+AI generates new App.tsx
+        ↓
+Spring Backend saves it to MinIO
+        ↓
+Syncer container in Pod 36 detects the change
+        ↓
+Triggers HMR → browser updates without refresh
+        ↓
+User sees the red button instantly
+```
+
+---
+
+### Security — Kubernetes Network Policy
+
+Each pod is completely isolated from every other pod:
+
+```
+Pod 36 (User A's project)  →  CANNOT talk to  →  Pod 37 (User B's project)
+```
+
+This is enforced via Kubernetes Network Policy. Without it, a malicious user could potentially access another
+user's running code or internal pod data.
+
+---
+
+### Key Design Decisions
+
+| Decision                           | Reason                                                                 |
+|------------------------------------|------------------------------------------------------------------------|
+| One pod per project                | Complete isolation — one project can't crash or access another         |
+| Vite dev server inside pod         | HMR gives instant preview updates without full rebuilds                |
+| Redis for routing                  | Sub-millisecond lookup — far faster than a DB query on every page load |
+| fabric8 K8s client                 | Spring-native way to programmatically create and manage pods           |
+| Network policy blocking pod-to-pod | Security — prevents cross-tenant data leakage                          |
+| Syncer sidecar container           | Decouples file watching from the runner — single responsibility        |
+
+---
+
+### How This Maps to What You've Already Built
+
+| What you built                     | What this architecture adds              |
+|------------------------------------|------------------------------------------|
+| AI generates code → saved to MinIO | Syncer reads from that same MinIO        |
+| `projectId` in your DB             | Becomes the pod name (`pod36`)           |
+| Spring Backend                     | Gets a new `DeployService` using fabric8 |
+| Subdomain setup                    | Reverse proxy + Redis routing layer      |
+| PostgreSQL stores file metadata    | Redis stores the live IP routing table   |
+
+The part already built (AI chat → code generation → MinIO storage) is the **write path**.
+This architecture is the **read/execution path** — taking those saved files and actually running them for the user to
+see.
