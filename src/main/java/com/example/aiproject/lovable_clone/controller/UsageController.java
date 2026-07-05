@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/usage")
 public class UsageController {
     private final UsageService usageService;
-    private AuthUtil auth;
+    private final AuthUtil auth;
 
     @GetMapping("/today")
     public ResponseEntity<UsageTodayResponse> getTodayUsage() {

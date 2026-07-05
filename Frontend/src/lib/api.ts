@@ -359,9 +359,16 @@ export const api = {
               // 1. Send clean text to UI
               onChunk(content);
 
-              // 2. Accumulate for file parsing (Same as before)
+              // 2. Accumulate for file parsing
               fullContentBuffer += content;
-              // ... (rest of regex logic) ...
+              
+              const fileRegex = /<file\s+path="([^"]+)">([\s\S]*?)(?:<\/file>|$)/gi;
+              let fileMatch;
+              while ((fileMatch = fileRegex.exec(fullContentBuffer)) !== null) {
+                const filePath = fileMatch[1];
+                const fileContent = fileMatch[2];
+                onFile(filePath, fileContent);
+              }
 
             } catch (e) {
               console.error("Failed to parse SSE JSON:", e);

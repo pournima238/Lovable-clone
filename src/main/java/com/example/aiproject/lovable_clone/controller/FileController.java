@@ -19,7 +19,7 @@ import java.util.List;
 @RequestMapping("/api/projects/{projectId}/files")
 public class FileController {
     private final ProjectFileService projectFileService;
-    private AuthUtil auth;
+    private final AuthUtil auth;
 
     @GetMapping
     public ResponseEntity<FileTreeResponse> getFileTree(@PathVariable Long projectId) {
@@ -27,10 +27,10 @@ public class FileController {
         return ResponseEntity.ok(projectFileService.getFileTree(projectId));
     }
 
-    @GetMapping("/{*path}") //src/hooks/.jsx
+    @GetMapping("/content")
     public ResponseEntity<FileContentResponse> getFile(
             @PathVariable Long projectId,
-            @PathVariable String path
+            @org.springframework.web.bind.annotation.RequestParam("path") String path
     ) {
         Long userId = auth.getCurrentUserId();
         return ResponseEntity.ok(projectFileService.getFileContent(projectId, path));

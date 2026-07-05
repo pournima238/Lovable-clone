@@ -16,7 +16,7 @@ import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/project")
+@RequestMapping("/api/projects")
 public class ProjectController {
     private final ProjectService projectService;
     private final AuthUtil auth;
@@ -27,28 +27,28 @@ public class ProjectController {
         return ResponseEntity.ok(projectService.getAllProjects(userId));
     }
 
-     @GetMapping("/{id}")
+    @GetMapping("/{id}")
     public ResponseEntity<ProjectResponse> getProjectById(@PathVariable Long id) {
-         Long userId = auth.getCurrentUserId();
-        return ResponseEntity.ok(projectService.getProjectById(id,userId));
+        Long userId = auth.getCurrentUserId();
+        return ResponseEntity.ok(projectService.getProjectById(id, userId));
     }
 
     @PostMapping
-    public ResponseEntity<ProjectResponse> createProject(@RequestBody @Valid ProjectRequest request){
+    public ResponseEntity<ProjectResponse> createProject(@RequestBody @Valid ProjectRequest request) {
         Long userId = auth.getCurrentUserId();
-        return ResponseEntity.status(HttpStatus.CREATED).body(projectService.createProject(request,userId));
+        return ResponseEntity.status(HttpStatus.CREATED).body(projectService.createProject(request, userId));
     }
 
     @PatchMapping("/{id}")
-    public ResponseEntity<ProjectResponse> updateProject(@PathVariable Long id, @RequestBody @Valid ProjectRequest request){
+    public ResponseEntity<ProjectResponse> updateProject(@PathVariable Long id, @RequestBody @Valid ProjectRequest request) {
         Long userId = auth.getCurrentUserId();
-        return ResponseEntity.ok(projectService.updateProject(id,request,userId));
+        return ResponseEntity.ok(projectService.updateProject(id, request, userId));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteProject(@PathVariable Long id){
+    public ResponseEntity<Void> deleteProject(@PathVariable Long id) {
         Long userId = auth.getCurrentUserId();
-        projectService.softDelete(id,userId);
+        projectService.softDelete(id, userId);
         return ResponseEntity.noContent().build();
     }
 

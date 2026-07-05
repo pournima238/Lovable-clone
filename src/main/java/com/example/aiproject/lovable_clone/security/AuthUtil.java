@@ -17,36 +17,38 @@ import java.util.Date;
 
 @Component
 public class AuthUtil {
-@Value("${jwt.secret-key}")
-private String jwtSecretKey;
-private SecretKey getSecretKey (){
-    return Keys.hmacShaKeyFor(jwtSecretKey.getBytes(StandardCharsets.UTF_8));
-}
-    public String generateAccessToken(User user){
+    @Value("${jwt.secret-key}")
+    private String jwtSecretKey;
+
+    private SecretKey getSecretKey() {
+        return Keys.hmacShaKeyFor(jwtSecretKey.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public String generateAccessToken(User user) {
         return Jwts.builder()
                 .setSubject(user.getUsername())
-                .claim("userId",user.getId().toString())
+                .claim("userId", user.getId().toString())
                 .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + 1000*60*10))
+                .setExpiration(new Date(System.currentTimeMillis() + 1000 * 60 * 100))
                 .signWith(getSecretKey())
                 .compact();
     }
 
-    public JwtUserPrincipal verifyAccessToken(String token){
+    public JwtUserPrincipal verifyAccessToken(String token) {
         Claims claims = Jwts.parserBuilder()
                 .setSigningKey(getSecretKey()) // This tells JJWT what key to verify against
                 .build()                   // Builds the JwtParser
                 .parseClaimsJws(token)     // This actually parses AND verifies the signature
                 .getBody();
         //if claims are present it means token is verified and we will get the below response object
-        Long userId = Long.parseLong(claims.get("userId",String.class));
-        String username=claims.getSubject();
-        return new JwtUserPrincipal(userId,username,new ArrayList<>());
+        Long userId = Long.parseLong(claims.get("userId", String.class));
+        String username = claims.getSubject();
+        return new JwtUserPrincipal(userId, username, new ArrayList<>());
     }
 
-    public Long getCurrentUserId(){
+    public Long getCurrentUserId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if(authentication==null || !((authentication.getPrincipal())instanceof JwtUserPrincipal userPrincipal)){
+        if (authentication == null || !((authentication.getPrincipal()) instanceof JwtUserPrincipal userPrincipal)) {
             throw new AuthenticationCredentialsNotFoundException("No jwt authentication found");
         }
         return userPrincipal.userId();

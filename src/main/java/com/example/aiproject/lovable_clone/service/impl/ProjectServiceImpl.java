@@ -53,7 +53,8 @@ public class ProjectServiceImpl implements ProjectService {
     @PreAuthorize("@security.canViewProject(#projectId)")// this is spring expression language not compiled by java
     public ProjectResponse getProjectById(Long projectId, Long userId) {
         Project project = projectRepository.findAllAccessibleByProject(userId, projectId).orElseThrow(() -> new ResourceNotFoundException("Project", projectId.toString()));
-        return projectMapper.toProjectResponse(project);
+        ProjectRole role = projectMemberRepository.findRoleByProjectIdAndUserId(projectId, userId).orElse(null);
+        return projectMapper.toProjectResponse(project, role);
     }
 
     @Override
@@ -93,7 +94,7 @@ public class ProjectServiceImpl implements ProjectService {
         // Save membership
         projectMemberRepository.save(projectMember);
 
-        return projectMapper.toProjectResponse(project);
+        return projectMapper.toProjectResponse(project, ProjectRole.OWNER);
     }
 
     @Override
@@ -103,7 +104,8 @@ public class ProjectServiceImpl implements ProjectService {
         Project project = projectRepository.findAllAccessibleByProject(userId, projectId).orElseThrow((() -> new ResourceNotFoundException("Project", projectId.toString())));
         project.setName(request.name());
         project = this.projectRepository.save(project);
-        return projectMapper.toProjectResponse(project);
+        ProjectRole role = projectMemberRepository.findRoleByProjectIdAndUserId(projectId, userId).orElse(null);
+        return projectMapper.toProjectResponse(project, role);
     }
 
     @Override

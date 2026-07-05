@@ -29,6 +29,7 @@ export function ProjectView() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("preview");
   const [updatedFiles, setUpdatedFiles] = useState<Map<string, string>>(new Map());
+  const [refreshSignal, setRefreshSignal] = useState(0);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [runtimeError, setRuntimeError] = useState<RuntimeError | null>(null);
   const [project, setProject] = useState<ProjectResponse | null>(null);
@@ -158,6 +159,7 @@ export function ProjectView() {
           )
         );
         setIsStreaming(false);
+        setRefreshSignal((prev) => prev + 1);
       },
       (error) => {
         // Handle error
@@ -437,7 +439,7 @@ Please analyze this error and fix the code to resolve it.`;
             <div className="h-full">
               <div className="h-full relative">
                 <div className={cn("h-full absolute inset-0", viewMode !== "code" && "hidden")}>
-                  <CodePanel projectId={projectId} updatedFiles={updatedFiles} />
+                  <CodePanel projectId={projectId} updatedFiles={updatedFiles} refreshSignal={refreshSignal} />
                 </div>
                 <div className={cn("h-full absolute inset-0", viewMode !== "preview" && "hidden")}>
                   <PreviewPanel

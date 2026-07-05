@@ -7,6 +7,7 @@ import { api, FileNode, OPEN_TABS_KEY, ACTIVE_TAB_KEY } from "@/lib/api";
 interface CodePanelProps {
   projectId: string;
   updatedFiles: Map<string, string>;
+  refreshSignal?: number;
 }
 
 // Helper to find a file by path in the tree
@@ -22,7 +23,7 @@ function findFileInTree(files: FileNode[], targetPath: string): boolean {
 const getTabsKey = (projectId: string) => `${OPEN_TABS_KEY}_${projectId}`;
 const getActiveTabKey = (projectId: string) => `${ACTIVE_TAB_KEY}_${projectId}`;
 
-export function CodePanel({ projectId, updatedFiles }: CodePanelProps) {
+export function CodePanel({ projectId, updatedFiles, refreshSignal }: CodePanelProps) {
   const [files, setFiles] = useState<FileNode[]>([]);
   const [openTabs, setOpenTabs] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<string | null>(null);
@@ -94,7 +95,7 @@ export function CodePanel({ projectId, updatedFiles }: CodePanelProps) {
     };
 
     loadFiles();
-  }, [projectId]);
+  }, [projectId, refreshSignal]);
 
   // Load file content when active tab changes
   useEffect(() => {
