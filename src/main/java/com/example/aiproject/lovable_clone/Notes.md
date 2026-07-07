@@ -1802,3 +1802,504 @@ user's running code or internal pod data.
 The part already built (AI chat → code generation → MinIO storage) is the **write path**.
 This architecture is the **read/execution path** — taking those saved files and actually running them for the user to
 see.
+---
+
+## 29 kind (Kubernetes IN Docker) — Local Kubernetes for Development
+
+### What is kind?
+
+`kind` is a tool that runs a full **Kubernetes cluster locally inside Docker containers** on your laptop.
+It is free, lightweight, and requires no cloud provider or VM setup.
+
+```
+Without kind → deploy to AWS/GCP → costs money + slow feedback
+With kind    → deploy to local cluster → free + instant
+```
+
+Your laptop runs Docker, Docker runs kind, kind runs Kubernetes, Kubernetes runs your pods.
+
+```
+Your Laptop
+└── Docker
+    └── kind cluster (itself a Docker container)
+        └── Kubernetes running inside
+            ├── Pod 36 (runner + syncer)
+            ├── Pod 37 (runner + syncer)
+            └── Pod 38 (runner + syncer)
+```
+
+---
+
+### Installation on Windows (PowerShell as Administrator)
+
+**Step 1 — Install Docker Desktop**
+
+- Download from https://www.docker.com/products/docker-desktop
+- Install and make sure Docker is running (whale icon in taskbar)
+
+**Step 2 — Install kubectl**
+
+```powershell
+winget install Kubernetes.kubectl
+```
+
+Verify (restart shell first if needed):
+
+```powershell
+kubectl version --client
+# Expected: Client Version: v1.x.x
+```
+
+**Step 3 — Install kind**
+
+```powershell
+winget install Kubernetes.kind
+```
+
+> After install, **close and reopen PowerShell** — the PATH needs to refresh.
+
+Verify:
+
+```powershell
+kind version
+# Expected: kind v0.32.0 go1.xx.x windows/amd64
+```
+
+---
+
+### Essential Commands
+
+```powershell
+# Create a cluster
+kind create cluster --name lovable-dev
+
+# Verify cluster is running
+kubectl get nodes
+
+# Load your local Docker image into kind
+# (kind cannot see local Docker images by default)
+kind load docker-image lovable-runner:latest --name lovable-dev
+
+# Delete a cluster
+kind delete cluster --name lovable-dev
+
+# See all running pods
+kubectl get pods
+
+# See logs of a specific container inside a pod
+kubectl logs pod-36 -c runner
+
+# Delete a specific pod
+kubectl delete pod pod-36
+
+# Point kubectl to your kind cluster (if it loses context)
+kind export kubeconfig --name lovable-dev
+```
+
+---
+
+### kind vs Other Tools
+
+| Tool          | Where it runs               | Best for                              |
+|---------------|-----------------------------|---------------------------------------|
+| `kind`        | Docker containers on laptop | CI pipelines, local dev, fast startup |
+| `minikube`    | VM on laptop                | Local dev, heavier but more features  |
+| AWS EKS / GKE | Cloud VMs                   | Production                            |
+
+---
+
+### Common Issues on Windows
+
+| Issue                                   | Fix                                                           |
+|-----------------------------------------|---------------------------------------------------------------|
+| `kind: command not found` after install | Close and reopen PowerShell — PATH needs to refresh           |
+| Docker not running                      | Open Docker Desktop and wait for whale icon to stop animating |
+| `kubectl` can't connect to cluster      | Run `kind export kubeconfig --name lovable-dev`               |
+| WSL2 error on Docker start              | Enable WSL2 in Windows Features → Virtual Machine Platform    |
+| Commands not working                    | Always run PowerShell as Administrator                        |
+
+---
+
+## 30 Proxy vs Reverse Proxy vs API Gateway
+
+### Proxy (Forward Proxy)
+
+Sits in front of the **client**. The client sends requests through it so the
+destination server never knows the real client's identity.
+
+```
+Client → Proxy → Server
+Server only sees Proxy, never the real Client
+```
+
+Use cases: VPNs, corporate firewalls blocking certain websites, client anonymity.
+
+---
+
+### Reverse Proxy
+
+Sits in front of the **server**. The client talks to it and it silently
+forwards to the right backend server. Client never knows which real server
+handled the request.
+
+```
+Client → Reverse Proxy → Server A
+                       → Server B
+                       → Server C
+Client only sees the Reverse Proxy address
+```
+
+Use cases: load balancing, SSL termination, routing preview URLs to pods
+(exactly what your Lovable clone uses for `project-36.app.domain.com → pod IP`).
+
+Tools: Nginx, Traefik, HAProxy
+
+---
+
+### API Gateway
+
+A smart reverse proxy with extra features built in. Does everything a reverse
+proxy does plus authentication, rate limiting, logging, and request transformation.
+
+```
+Client → API Gateway → verify JWT
+                     → check rate limit
+                     → log request
+                     → route to correct microservice
+```
+
+Use cases: microservices architecture, centralizing auth and rate limiting
+outside of your business logic.
+
+Tools: Kong, AWS API Gateway, Spring Cloud Gateway
+
+---
+
+### Difference
+
+|                  | Proxy                   | Reverse Proxy            | API Gateway                              |
+|------------------|-------------------------|--------------------------|------------------------------------------|
+| Sits in front of | Client                  | Server                   | Server                                   |
+| Hides            | Client identity         | Server identity          | Server identity                          |
+| Main purpose     | Anonymity / filtering   | Routing / load balancing | Routing + Auth + Rate limiting + Logging |
+| Intelligence     | Dumb                    | Semi-smart               | Very smart                               |
+| Tools            | VPN, corporate firewall | Nginx, Traefik           | Kong, AWS API Gateway                    |
+
+---
+
+### Relationship
+
+```
+Proxy ⊂ Reverse Proxy ⊂ API Gateway
+
+Every API Gateway is a Reverse Proxy
+A Proxy and Reverse Proxy are opposites (client-side vs server-side)
+```
+
+---
+
+### In Your Lovable Clone
+
+```
+project-36.app.domain.com
+        ↓
+Reverse Proxy (Nginx)     ← reads Redis, routes to correct pod
+        ↓
+Pod 36 :5173
+
+
+/api/chat/stream
+        ↓
+Spring Backend            ← currently handles auth + rate limiting itself
+(could add API Gateway here to extract those concerns out of Spring)
+```
+
+---
+
+## 31 Understanding runner.yml file
+
+Great question! Let me break this file down piece by piece.
+
+---
+
+## What This File Is
+
+This is a **Deployment** YAML — it tells Kubernetes to create and manage a pool of pre-warmed runner pods so you don't
+have to wait for cold starts when a user clicks preview.
+
+---
+
+## Top Level
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: runner-pool
+  namespace: shuttle-apps
+```
+
+- `apiVersion: apps/v1` — which Kubernetes API version handles this resource
+- `kind: Deployment` — not a raw Pod, a Deployment. Deployment manages pods for you — if a pod crashes, Deployment
+  automatically restarts it
+- `name: runner-pool` — the name of this deployment
+- `namespace: shuttle-apps` — all pods created by this deployment live inside the `shuttle-apps` namespace
+
+---
+
+## The Clever Part — Pre-warming with replicas
+
+```yaml
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: runner
+      status: idle
+  template:
+    metadata:
+      labels:
+        app: runner
+        status: idle
+```
+
+This is the **pool strategy**. Instead of creating a pod when a user clicks preview (slow — 30-60 seconds for npm
+install), this creates **2 idle pods upfront** that are already warm and waiting.
+
+```
+Cluster always has:
+├── runner-pod-1  (status: idle) ← waiting for a user
+└── runner-pod-2  (status: idle) ← waiting for a user
+
+User clicks preview on Project 36:
+├── runner-pod-1  (status: running) ← assigned to project 36
+└── runner-pod-2  (status: idle)   ← still waiting
+
+Spring Backend creates a new idle pod to refill the pool:
+├── runner-pod-1  (status: running) ← project 36
+├── runner-pod-2  (status: idle)    ← waiting
+└── runner-pod-3  (status: idle)    ← newly created to refill
+```
+
+The `status: idle` label is what Spring Backend queries to find an available pod:
+
+```java
+// fabric8 pseudocode
+k8sClient.pods()
+    .
+
+inNamespace("shuttle-apps")
+    .
+
+withLabel("status","idle")  // find any idle pod
+    .
+
+list()
+    .
+
+getItems()
+    .
+
+get(0);                       // grab the first one
+```
+
+Then it changes the label to `status: running` and assigns it to the project.
+
+---
+
+## Volumes — Shared Storage Between Containers
+
+```yaml
+volumes:
+  - name: workspace
+    emptyDir: { }
+  - name: pnpm-store
+    hostPath:
+      path: /mnt/pnpm-store
+      type: DirectoryOrCreate
+```
+
+Two volumes are defined here:
+
+**workspace (`emptyDir`):**
+
+- An empty folder that exists only while the pod is alive
+- Shared between runner and syncer containers
+- This is where the project files live (`/app`)
+- When syncer downloads files from MinIO, it writes to this volume
+- runner reads from this same volume to serve the Vite app
+
+```
+┌─────────────── Pod ───────────────┐
+│  runner ──→ /app (workspace)      │
+│  syncer ──→ /app (workspace)      │
+│  both see the same files          │
+└───────────────────────────────────┘
+```
+
+**pnpm-store (`hostPath`):**
+
+- Points to `/mnt/pnpm-store` on the actual machine (Node) running this pod
+- This is a **cache** — all pods on the same machine share one pnpm store
+- So if Project 36 installs React, and Project 37 also needs React, it doesn't download it again
+- `DirectoryOrCreate` means create the folder if it doesn't exist
+
+```
+Machine (Kubernetes Node)
+└── /mnt/pnpm-store          ← shared pnpm cache
+    ├── react@18.0.0
+    ├── vite@5.0.0
+    └── tailwindcss@4.0.0
+
+Pod 36 → uses /mnt/pnpm-store → React already cached → fast install
+Pod 37 → uses /mnt/pnpm-store → React already cached → fast install
+```
+
+---
+
+## Runner Container
+
+```yaml
+- name: runner
+  image: node:20-alpine
+  workingDir: /app
+  command: [ "/bin/sh", "-c", "sleep infinity" ]
+  volumeMounts:
+    - name: workspace
+      mountPath: /app
+    - name: pnpm-store
+      mountPath: /root/.local/share/pnpm
+  ports:
+    - containerPort: 5173
+  resources:
+    limits:
+      memory: "1Gi"
+```
+
+- `image: node:20-alpine` — lightweight Node.js image, no custom image needed
+- `workingDir: /app` — all commands run from `/app` by default
+- `command: sleep infinity` — **this is the key trick**. The container starts but does nothing. It just stays alive
+  waiting. When Spring Backend assigns a project to it, fabric8 executes commands inside this already-running container:
+
+```java
+// fabric8 executes commands inside the sleeping container
+k8sClient.pods()
+    .
+
+inNamespace("shuttle-apps")
+    .
+
+withName("runner-pod-1")
+    .
+
+inContainer("runner")
+    .
+
+exec("pnpm","install");
+
+k8sClient.
+
+pods()
+    .
+
+inNamespace("shuttle-apps")
+    .
+
+withName("runner-pod-1")
+    .
+
+inContainer("runner")
+    .
+
+exec("pnpm","run","dev");
+```
+
+- `containerPort: 5173` — Vite runs here
+- `memory: 1Gi` — hard cap so one user's project can't crash the whole node
+
+---
+
+## Syncer Container
+
+```yaml
+- name: syncer
+  image: minio/mc
+  command: [ "/bin/sh", "-c", "sleep infinity" ]
+  env:
+    - name: MC_HOST_myminio
+      value: "http://minioadmin:minioadmin123@minio-service:9000"
+  volumeMounts:
+    - name: workspace
+      mountPath: /app
+```
+
+- `image: minio/mc` — MinIO client image, has all the tools to talk to MinIO
+- `sleep infinity` — same trick as runner, just waits
+- `MC_HOST_myminio` — pre-configured MinIO connection. `myminio` becomes an alias so commands look like:
+
+```bash
+# Instead of:
+mc cp http://minioadmin:minioadmin123@minio-service:9000/projects/36/src/App.tsx /app/src/App.tsx
+
+# You just write:
+mc cp myminio/projects/36/src/App.tsx /app/src/App.tsx
+```
+
+When Spring Backend assigns project 36 to this pod, fabric8 tells the syncer to pull files:
+
+```java
+k8sClient.pods()
+    .
+
+withName("runner-pod-1")
+    .
+
+inContainer("syncer")
+    .
+
+exec("mc","cp","--recursive","myminio/projects/36/","/app/");
+```
+
+And for live updates (when AI edits a file):
+
+```java
+// Watch for changes and sync continuously
+k8sClient.pods()
+    .
+
+withName("runner-pod-1")
+    .
+
+inContainer("syncer")
+    .
+
+exec("mc","watch","myminio/projects/36/");
+```
+
+---
+
+## The Complete Picture
+
+```
+Deployment creates 2 idle pods upfront
+        ↓
+Each pod has runner (sleeping) + syncer (sleeping)
+        ↓
+User clicks Preview on Project 36
+        ↓
+Spring Backend finds idle pod via label selector
+        ↓
+Changes label: status: idle → status: running
+        ↓
+fabric8 tells syncer: pull files from MinIO → /app/
+        ↓
+fabric8 tells runner: pnpm install → pnpm run dev
+        ↓
+Vite starts on :5173
+        ↓
+Spring Backend writes to Redis: project-36.domain.com → pod-IP:5173
+        ↓
+Returns preview URL to Frontend
+        ↓
+AI edits a file → saved to MinIO → syncer detects → copies to /app/ → HMR updates preview
+```

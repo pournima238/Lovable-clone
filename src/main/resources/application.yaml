@@ -24,7 +24,7 @@ spring:
   ai:
     openai:
       # --- Groq (active) ---
-      api-key: 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
+      api-key: ${GROQ_API_KEY}
       base-url: https://api.groq.com/openai/v1
       chat:
         completions-path: /chat/completions
@@ -35,15 +35,6 @@ spring:
         read-timeout: 600000
         connect-timeout: 60000
         connection-request-timeout: 600000
-
-      # --- OpenRouter (commented out) ---
-      # api-key: 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
-      # base-url: https://openrouter.ai/api/v1
-      # chat:
-      #   completions-path: /chat/completions
-      #   options:
-      #     model: openai/gpt-oss-120b:free
-      #     temperature: 0.0
 
 server:
   tomcat:
@@ -67,6 +58,6 @@ logging:
 
 minio:
   url: http://localhost:9002
-  access-key: minioadmin
-  secret-key: minioadmin123
+  access-key: ${MINIO_ACCESS_KEY}
+  secret-key: ${MINIO_SECRET_KEY}
   project-bucket: projects
