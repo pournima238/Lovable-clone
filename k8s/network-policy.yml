@@ -1,0 +1,32 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: isolate-project-pods
+  namespace: lovable-dev
+spec:
+  # 1. Who does this policy apply to?
+  podSelector:
+    matchLabels:
+      app: runner
+      status: busy # Only lock down pods that are actively running user code
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # 2. INGRESS: Who is allowed to talk TO the runner?
+  ingress:
+    - from:
+        # ALLOW: Only the Node.js Proxy can send traffic into this pod
+        - podSelector:
+            matchLabels:
+              app: lovable-proxy
+      ports:
+        - protocol: TCP
+          port: 5173
+
+  # 3. EGRESS: Who is the runner allowed to talk TO?
+  egress:
+    - to:
+        # ALLOW: The runner can talk to the entire internet (Required for `npm install`)
+        - ipBlock:
+            cidr: 0.0.0.0/0

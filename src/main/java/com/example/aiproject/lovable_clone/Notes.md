@@ -2303,3 +2303,152 @@ Returns preview URL to Frontend
         ↓
 AI edits a file → saved to MinIO → syncer detects → copies to /app/ → HMR updates preview
 ```
+
+---
+
+# Backend Architecture Notes: Spring Boot vs. Node.js Reverse Proxy
+
+## 1. Spring Boot Backend (The Brain)
+
+* **Architecture:** Multi-Threaded, Blocking I/O (Thread-per-Request model).
+* **How it works:** When a request hits Spring Boot, the server dedicates a single thread from its thread pool to handle
+  that request from start to finish. If the thread needs to wait for a database query, file storage, or an AI API
+  response, that thread sits idle and "blocks" until the task completes.
+* **Best Used For:** Heavy business logic, complex data processing, CPU-intensive calculations, and strict
+  security/transaction management.
+* **Limitation:** Scaling requires significant memory (RAM) because each active thread consumes server resources just to
+  sit and wait.
+
+## 2. Node.js Engine (The Traffic Cop)
+
+* **Architecture:** Single-Threaded, Asynchronous, Non-Blocking I/O.
+* **How it works:** Node.js executes JavaScript on a single thread called the **Event Loop**. When a slow I/O task (like
+  a network request or database query) is triggered, Node.js offloads the actual waiting to the background system
+  operating level (**Libuv** / C++ Thread Pool). The main thread instantly clears and moves on to the next user. When
+  the background task finishes, its callback function enters the **Callback Queue**, and the Event Loop pushes it back
+  to the main thread to send the response.
+* **Best Used For:** High-concurrency I/O routing, handling continuous open connections (WebSockets), and streaming
+  data.
+* **Limitation:** Heavy CPU calculations (like loops or image rendering) will freeze the entire single thread, blocking
+  all other users.
+
+---
+
+## 3. Why Use Node.js as a Reverse Proxy?
+
+Instead of routing users directly to Spring Boot, putting Node.js in front as a Reverse Proxy offers three main
+architectural advantages:
+
+### Efficient Connection Management
+
+Real-time connections (like GraphQL Subscriptions or WebSockets for live previews) require keeping a communication "
+pipe" open continuously. If Spring Boot holds thousands of pipes open, it quickly runs out of threads and crashes.
+Node.js can easily hold tens of thousands of open connections simultaneously because its single thread offloads the
+network maintenance to the operating system.
+
+### Resource and Cost Efficiency
+
+* **Spring Boot** requires a heavy memory footprint to stay alive.
+* **Node.js** is lightweight and requires minimal RAM.
+  By letting Node.js handle the simple task of parsing entry routes, verifying headers, and checking cache keys (e.g.,
+  via Redis), you protect the expensive Spring Boot instances from being flooded with trivial traffic.
+
+### System Decoupling and Fail-Safe Isolation
+
+If the Spring Boot kitchen gets overwhelmed by a heavy AI generation task and goes down, the Node.js proxy remains
+running. It can handle user retries, serve static cached layouts, or show graceful error messages, preventing the entire
+application from facing a hard network timeout.
+
+---
+
+## 32. Understanding the whole local k8 setup with redis serever and services of minio, redis
+
+This is a massive milestone. Looking at these YAML files together, you have successfully architected a highly scalable,
+enterprise-grade "Live Preview" execution environment for your AI coding assistant.
+
+To help you solidify this for your `notes.md`, here is the complete, top-to-bottom summary of the architecture you just
+built, how it interacts with your Spring Boot backend, and the exact commands we used to get here.
+
+---
+
+### Part 1: The Architecture (The "Why")
+
+You built an isolated execution environment using Kubernetes (`kind`) to safely run AI-generated React code and serve it
+to the user in real-time.
+
+#### 1. The Foundation (`infra.yml`)
+
+* **The Namespace (`lovable-dev`):** You created a dedicated sandbox. This ensures your project execution environment is
+  completely isolated from system processes.
+* **The MinIO Bridge (`minio-service`):** Your MinIO storage (holding the template files and AI-generated code) runs
+  locally on your Windows machine. Kubernetes pods cannot normally see your local host. You created an `ExternalName`
+  service pointing to `host.docker.internal` on port `9002` to drill a secure tunnel from inside the cluster out to your
+  local MinIO.
+* **The Routing Table (`redis-server` & `redis-service`):** You deployed an in-memory Redis database. Because querying
+  PostgreSQL on every single page load is too slow, your Spring Boot backend will write dynamic IP mappings here (e.g.,
+  `project-6 -> 192.168.x.x`), allowing your reverse proxy to route traffic instantly.
+
+#### 2. The Engine (`runner-pod.yml`)
+
+* **The Warm Pool (`replicas: 2`):** Instead of making users wait 60 seconds for `npm install` when they click "
+  Preview", you created a Deployment that maintains two pre-warmed, idle pods at all times.
+* **The Runner Container:** A lightweight Node.js environment that sleeps until needed. When claimed, your Spring Boot
+  app uses the Fabric8 client to execute `npm install` and `npm run dev` inside it.
+* **The Syncer Container (Sidecar):** Runs the MinIO client (`mc`). Its job is to securely connect to your
+  `minio-service` bridge, download the AI-generated code into the shared `/app` volume, and actively watch for file
+  changes to trigger Vite's Hot Module Replacement (HMR).
+
+#### 3. The Front Desk (The Node.js Proxy)
+
+* **The Traffic Cop:** You wrote a lightweight Node.js reverse proxy (`proxy.js`) that sits at the edge of your
+  cluster (`LoadBalancer` on port 80). It intercepts wildcard subdomains, checks Redis for the correct pod IP, and
+  forwards the traffic. It specifically handles WebSockets (`ws: true`) so live code edits stream perfectly to the
+  user's browser.
+
+---
+
+### Part 2: The End-to-End Flow
+
+Here is exactly what happens when a user uses your application:
+
+1. **Generation:** The user asks the AI to build a React component. Your Spring Boot backend streams the code and saves
+   the files to your local MinIO bucket.
+2. **Claiming:** The Spring Boot backend tells Kubernetes to grab one of the `idle` runner pods, changing its label to
+   `busy` (which instantly triggers Kubernetes to spin up a fresh replacement pod).
+3. **Syncing & Running:** Spring Boot tells the `syncer` container to pull the files from MinIO. It then tells the
+   `runner` container to start the Vite server.
+4. **Routing:** Spring Boot records the busy pod's internal IP address into Redis.
+5. **Viewing:** The user visits the preview URL. The Node.js Proxy catches the request, looks up the IP in Redis, and
+   pipes the user's browser directly to the Vite server running inside the pod.
+
+---
+
+### Part 3: The Command Cheat Sheet (The "How")
+
+Here are the commands we ran along the way to build, debug, and reset this environment:
+
+**1. Cluster Management (`kind`)**
+
+* `kind create cluster --name lovable-dev`: Spun up the local Kubernetes cluster inside Docker.
+* `kind load docker-image lovable-proxy:latest --name lovable-dev`: Pushed your locally built Node.js proxy image inside
+  the cluster so Kubernetes could use it.
+
+**2. Applying Infrastructure**
+
+* `kubectl apply -f infra.yml`: Created the namespace, Redis, and the MinIO bridge.
+* `kubectl apply -f runner-pod.yml`: Spun up the auto-replenishing warm pool of runner pods.
+* `kubectl apply -f proxy.yml`: Started the Node.js reverse proxy and exposed it to `localhost:80`.
+
+**3. Debugging & Resetting**
+
+* `kubectl get pods -n lovable-dev`: Used constantly to verify the status (`Running`, `Pending`, or `ContainerCreating`)
+  of the pods.
+* `kubectl logs [pod-name] -c [container-name] -n lovable-dev`: Used to check the internal output (e.g., verifying Redis
+  connected successfully or seeing why `mc` failed).
+* `kubectl exec -it [pod-name] -c runner -- sh`: Used to physically step inside the Linux container. We ran `ls` here to
+  verify that the `syncer` successfully downloaded the `node_modules` and `src` files from MinIO.
+* `kubectl port-forward pod/[pod-name] 5173:5173`: Bypassed the proxy to establish a direct tunnel from your Windows
+  laptop to the Vite server for isolated UI testing.
+* **The Clean Reset:** `kubectl delete pods -l app=runner`. We used this crucial command to wipe out pods that had old
+  environment variables (the `9000` vs `9002` MinIO port issue). Because it is a Deployment, deleting them forced
+  Kubernetes to instantly rebuild fresh pods with the corrected YAML settings.

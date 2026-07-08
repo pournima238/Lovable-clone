@@ -20,7 +20,12 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
-
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  
+  
   ai:
     openai:
       # --- Groq (active) ---
