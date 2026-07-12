@@ -142,3 +142,81 @@ Located in [src/main/resources/META-INF/spring/](file:///c:/Users/Pournima%20Tha
 1.  **DRY (Don't Repeat Yourself)**: Avoids duplicating security configuration, JWT validation logic, and error handlers across multiple microservices.
 2.  **Security Token Relay**: Integrates Feign Client interceptors directly with Spring Security to pass authorization context cleanly across network boundaries.
 3.  **Unified API Contracts**: Unifies JSON data models for error handling and user data structures across all downstream services.
+
+---
+
+# 3. Config Server & Discovery Server Setup
+
+In this section, we cover the setup and integration of two foundational infrastructure services in our microservices cluster: **Spring Cloud Config Server** (for centralized configuration management) and **Netflix Eureka Discovery Server** (for service registry and discovery).
+
+---
+
+## 3.1. Centralized Configuration Management
+
+### 1. GitHub Private Repository & Personal Access Token (PAT)
+* **What we did:** Created a private Git repository (`lovable-config-server`) to store our microservices configuration files (`.yaml`/`.properties`), generated a GitHub Personal Access Token (PAT) with read permissions, and configured the Config Server to access it.
+* **Why we did it:** 
+  * **Centralization:** Storing all application configurations in a single place allows us to manage environment-specific properties (e.g., development, staging, production) without having to redeploy or rebuild the microservice applications when settings change.
+  * **Security:** A *private* repository ensures credentials (like database passwords, Kafka server configurations, and API keys) are secure and not exposed to the public.
+  * **Authentication:** The GitHub *PAT* is required for our local Spring Cloud Config Server to safely authenticate and pull configuration files from the private repository.
+
+### 2. Spring Cloud Config Server Setup ([config-service](file:///c:/Users/Pournima%20Thakare/Desktop/SpringBoot/lovable-clone/lovable-microservice-architecture-notes/config-service))
+* **What we did:**
+  * Enabled the configuration server by adding `@EnableConfigServer` to [ConfigServiceApplication.java](file:///c:/Users/Pournima%20Thakare/Desktop/SpringBoot/lovable-clone/lovable-microservice-architecture-notes/config-service/src/main/java/com/example/config_service/ConfigServiceApplication.java).
+  * Configured [application.yaml](file:///c:/Users/Pournima%20Thakare/Desktop/SpringBoot/lovable-clone/lovable-microservice-architecture-notes/config-service/src/main/resources/application.yaml) with the Git repository details, including the URI, username, default-label (branch name `main`), and the PAT as the password.
+* **Why we did it:**
+  * `@EnableConfigServer` marks the application as a Spring Cloud Config Server, unlocking the endpoints required for client microservices to request their configuration at startup.
+  * The `application.yaml` connection setup tells the service exactly where to fetch the files from and provides the authentication credentials to bypass GitHub's private repository access restrictions.
+
+---
+
+## 3.2. Service Registry & Discovery
+
+### 1. Netflix Eureka Server Setup ([discovery-service](file:///c:/Users/Pournima%20Thakare/Desktop/SpringBoot/lovable-clone/lovable-microservice-architecture-notes/discovery-service))
+* **What we did:**
+  * Enabled Eureka Server capabilities by adding `@EnableEurekaServer` to [DiscoveryServiceApplication.java](file:///c:/Users/Pournima%20Thakare/Desktop/SpringBoot/lovable-clone/lovable-microservice-architecture-notes/discovery-service/src/main/java/com/example/discovery_service/DiscoveryServiceApplication.java).
+  * Configured [application.yaml](file:///c:/Users/Pournima%20Thakare/Desktop/SpringBoot/lovable-clone/lovable-microservice-architecture-notes/discovery-service/src/main/resources/application.yaml) with the registry-specific options:
+    ```yaml
+    eureka:
+      client:
+        register-with-eureka: false
+        fetch-registry: false
+    ```
+* **Why we did it:**
+  * **Dynamic Directory (Eureka Server):** Rather than hardcoding IP addresses and ports for each microservice, microservices register themselves dynamically with Eureka upon startup. They also consult Eureka to find where other microservices are running.
+  * **Disable Self-Registration & Fetching:** Since this application *is* the Eureka Server itself, it does not need to register with itself (`register-with-eureka: false`), nor does it need to fetch/cache the registry from a peer server (`fetch-registry: false`). This prevents the server from logging unnecessary connection/registration errors trying to find itself.
+
+---
+
+## 3.3. Configuration Fetching Flow (Config-First vs. Discovery-First)
+
+Here is a detailed breakdown of how your microservices retrieve configuration and register themselves in this setup.
+
+### Config-First Flow (Current Implementation)
+
+By default, we configure the client microservices using `spring.config.import` referencing the Config Server URL directly:
+
+```yaml
+spring:
+  config:
+    import: "optional:configserver:http://localhost:8888"
+```
+
+In this setup:
+1. **Config Server Initialization**: The `config-service` (on Port 8888) clones the config files from the private GitHub repository (`lovable-config-server`).
+2. **Direct Config Retrieval**: When a microservice starts, it connects directly to `http://localhost:8888` via HTTP to retrieve its configuration properties. At this stage, it does *not* consult the Eureka Discovery Server.
+3. **Eureka Registration**: One of the properties fetched from the Config Server is the Eureka Service URL (`eureka.client.service-url.defaultZone`). The microservice then uses this URL to register itself with the Discovery Server on Port 8761.
+
+![Configuration Flow Diagram](config_flow_diagram.png)
+
+
+### Alternative: Discovery-First Flow
+
+If you want the microservices to find the Config Server dynamically via Eureka instead of using a hardcoded URL:
+1. You would set `spring.cloud.config.discovery.enabled: true` in the client.
+2. The client would first contact Eureka on startup to resolve the host and port of the `config-service`.
+3. The client would then pull its configuration from the resolved Config Server instance.
+
+*Note: The Config-First flow is standard, simpler to debug, and faster for local development.*
+
+
