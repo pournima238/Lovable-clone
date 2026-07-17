@@ -28,6 +28,7 @@ public class AuthUtil {
         return Jwts.builder()
                 .subject(user.userName())
                 .claim("userId", user.id().toString())
+                .claim("name", user.name())
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + 1000 * 60 * 100))
                 .signWith(getSecretKey())
@@ -43,6 +44,7 @@ public class AuthUtil {
         //if claims are present it means token is verified and we will get the below response object
         Long userId = Long.parseLong(claims.get("userId", String.class));
         String username = claims.getSubject();
+        String name = claims.get("name", String.class);
         return new JwtUserPrincipal(userId, username, null, new ArrayList<>());
     }
 
