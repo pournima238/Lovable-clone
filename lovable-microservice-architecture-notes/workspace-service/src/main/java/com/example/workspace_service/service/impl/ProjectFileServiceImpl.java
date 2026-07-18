@@ -1,6 +1,5 @@
 package com.example.workspace_service.service.impl;
 
-
 import com.example.common_lib.error.ResourceNotFoundException;
 import com.example.workspace_service.dto.project.FileContentResponse;
 import com.example.workspace_service.dto.project.FileNode;
@@ -48,7 +47,6 @@ public class ProjectFileServiceImpl implements ProjectFileService {
         return new FileTreeResponse(projectFileNodes);
     }
 
-
     @Override
     public FileContentResponse getFileContent(Long projectId, String path) {
         String objectName = projectId + "/" + path;
@@ -70,8 +68,7 @@ public class ProjectFileServiceImpl implements ProjectFileService {
     @Override
     public void saveFile(Long projectId, String path, String content) {
         Project project = projectRepository.findById(projectId).orElseThrow(
-                () -> new ResourceNotFoundException("Project", projectId.toString())
-        );
+                () -> new ResourceNotFoundException("Project", projectId.toString()));
 
         String cleanPath = path.startsWith("/") ? path.substring(1) : path;
         String objectKey = projectId + "/" + cleanPath;
@@ -109,10 +106,14 @@ public class ProjectFileServiceImpl implements ProjectFileService {
 
     private String determineContentType(String path) {
         String type = URLConnection.guessContentTypeFromName(path);
-        if (type != null) return type;
-        if (path.endsWith(".jsx") || path.endsWith(".ts") || path.endsWith(".tsx")) return "text/javascript";
-        if (path.endsWith(".json")) return "application/json";
-        if (path.endsWith(".css")) return "text/css";
+        if (type != null)
+            return type;
+        if (path.endsWith(".jsx") || path.endsWith(".ts") || path.endsWith(".tsx"))
+            return "text/javascript";
+        if (path.endsWith(".json"))
+            return "application/json";
+        if (path.endsWith(".css"))
+            return "text/css";
 
         return "text/plain";
     }
