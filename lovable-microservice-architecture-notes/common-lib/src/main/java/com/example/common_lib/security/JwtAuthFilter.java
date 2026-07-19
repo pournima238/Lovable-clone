@@ -37,13 +37,22 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             // if we have validated token and context does not have info about the user than
             if (userPrincipal != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(
-                        userPrincipal, null, new ArrayList<>()
+                        userPrincipal, jwtToken, new ArrayList<>()
                 );
                 SecurityContextHolder.getContext().setAuthentication(authenticationToken);
             }
             filterChain.doFilter(request, response);
         } catch (Exception e) {
-            handlerExceptionResolver.resolveException(request, response, null, e);
+            log.error("Exception in JwtAuthFilter: {}", e.getMessage(), e);
+            if (!response.isCommitted()) {
+                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                response.setContentType("application/json");
+                try {
+                    response.getWriter().write("{\"error\": \"" + e.getMessage().replace("\"", "\\\"") + "\"}");
+                } catch (IOException ioException) {
+                    log.error("Failed to write error response", ioException);
+                }
+            }
         }
     }
 }
