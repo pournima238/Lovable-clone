@@ -25,10 +25,10 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiError> handleResourceNotFound(ResourceNotFoundException ex) {
-        ApiError error = new ApiError(HttpStatus.NOT_FOUND, ex.getResourceName() + "with id: " + ex.getResourceId() + "Not found");
-        log.error(error.toString(), ex.getResourceName() + "with id: " + ex.getResourceId() + "Not found");
+        String msg = ex.getResourceName() + " with id: " + ex.getResourceId() + " not found";
+        ApiError error = new ApiError(HttpStatus.NOT_FOUND, msg);
+        log.error("Resource not found: {}", msg);
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
-
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

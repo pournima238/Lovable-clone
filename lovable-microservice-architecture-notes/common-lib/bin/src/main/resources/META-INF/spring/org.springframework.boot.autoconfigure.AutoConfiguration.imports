@@ -1,0 +1,2 @@
+com.example.common_lib.security.SharedSecurityAutoConfiguration
+com.example.common_lib.error.SharedExceptionAutoConfiguration

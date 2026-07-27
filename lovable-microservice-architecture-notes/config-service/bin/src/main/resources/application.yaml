@@ -1,0 +1,15 @@
+spring:
+  application:
+    name: config-service
+
+  cloud:
+    config.server.git:
+      uri: https://github.com/pournima238/lovable-config-server
+      username: pournima238
+      password: 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
+      default-label: main
+
+server.port: 8888
+
+
+#    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

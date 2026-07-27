@@ -9,8 +9,15 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.servlet.HandlerExceptionResolver;
 
+import jakarta.annotation.PostConstruct;
+
 @AutoConfiguration
 public class SharedSecurityAutoConfiguration {
+
+    @PostConstruct
+    public void init() {
+        SecurityContextHolder.setStrategyName(SecurityContextHolder.MODE_INHERITABLETHREADLOCAL);
+    }
 
     @Bean
     public AuthUtil authUtil() {

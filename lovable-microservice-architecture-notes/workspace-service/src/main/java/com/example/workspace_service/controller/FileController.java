@@ -32,4 +32,15 @@ public class FileController {
         Long userId = auth.getCurrentUserId();
         return ResponseEntity.ok(projectFileService.getFileContent(projectId, path));
     }
+
+    @org.springframework.web.bind.annotation.PostMapping
+    public ResponseEntity<Void> saveFile(
+            @PathVariable Long projectId,
+            @org.springframework.web.bind.annotation.RequestBody SaveFileRequest request
+    ) {
+        projectFileService.saveFile(projectId, request.path(), request.content());
+        return ResponseEntity.ok().build();
+    }
+
+    public record SaveFileRequest(String path, String content) {}
 }

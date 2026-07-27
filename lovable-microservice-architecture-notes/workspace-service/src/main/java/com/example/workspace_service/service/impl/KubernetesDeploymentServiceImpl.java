@@ -34,7 +34,7 @@ public class KubernetesDeploymentServiceImpl implements DeploymentService {
     @Override
     public DeployResponse deploy(Long projectId) {
 
-        String domain = "project-" + projectId + ".app.domain.com";
+        String domain = "project-" + projectId + ".127.0.0.1.nip.io";
 
         Pod existingPod = findActivePod(projectId);
 
@@ -51,8 +51,9 @@ public class KubernetesDeploymentServiceImpl implements DeploymentService {
         Pod pod = client.pods().inNamespace(NAMESPACE)
                 .withLabel(POOL_LABEL, IDLE)
                 .list().getItems().stream()
+                .filter(p -> "Running".equalsIgnoreCase(p.getStatus().getPhase()))
                 .findFirst()
-                .orElseThrow(() -> new RuntimeException("No idle runners available. Please scale up the runner-pool."));
+                .orElseThrow(() -> new RuntimeException("No idle runners available in Running state. Please scale up the runner-pool."));
 
         String podName = pod.getMetadata().getName();
         log.info("Claiming pod {} for project {}", podName, projectId);
@@ -64,6 +65,16 @@ public class KubernetesDeploymentServiceImpl implements DeploymentService {
         });
 
         try {
+            // Ensure pod phase is Running before executing container commands
+            long startTime = System.currentTimeMillis();
+            while (System.currentTimeMillis() - startTime < 10000) {
+                Pod currentPod = client.pods().inNamespace(NAMESPACE).withName(podName).get();
+                if (currentPod != null && "Running".equalsIgnoreCase(currentPod.getStatus().getPhase())) {
+                    break;
+                }
+                try { Thread.sleep(500); } catch (InterruptedException ignored) {}
+            }
+
             // Syncer Commands
             String initialSyncCmd = String.format(
                     "mc mirror --overwrite myminio/projects/%d/ /app/",
@@ -91,7 +102,7 @@ public class KubernetesDeploymentServiceImpl implements DeploymentService {
         } catch (Exception e) {
             log.error("Deployment failed for project {}. Releasing pod {}.", projectId, podName, e);
             client.pods().inNamespace(NAMESPACE).withName(podName).delete();
-            throw new RuntimeException("Failed to deploy the project with id: " + projectId);
+            throw new RuntimeException("Failed to deploy the project with id: " + projectId, e);
         }
     }
 
@@ -99,36 +110,46 @@ public class KubernetesDeploymentServiceImpl implements DeploymentService {
         String podIp = pod.getStatus().getPodIP();
         if (podIp == null) throw new RuntimeException("Pod is running but has no IP!");
 
-        redisTemplate.opsForValue().set("route:" + domain, podIp + ":5173", 6, TimeUnit.HOURS);
+        try {
+            redisTemplate.opsForValue().set("route:" + domain, podIp + ":5173", 6, TimeUnit.HOURS);
+        } catch (Exception e) {
+            log.warn("Could not register route in Redis: {}", e.getMessage());
+        }
     }
 
     private void execCommand(String podName, String container, String... command) {
         log.debug("Exec in {}:{} -> {}", podName, container, String.join(" ", command));
 
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
         CompletableFuture<String> data = new CompletableFuture<>();
+
         try (ExecWatch ignored = client.pods().inNamespace(NAMESPACE).withName(podName)
                 .inContainer(container)
-                .writingOutput(new ByteArrayOutputStream())
-                .writingError(new ByteArrayOutputStream())
+                .writingOutput(out)
+                .writingError(err)
                 .usingListener(new ExecListener() {
                     @Override
                     public void onClose(int code, String reason) {
                         data.complete("Done");
                     }
+
+                    @Override
+                    public void onFailure(Throwable t, Response response) {
+                        data.completeExceptionally(t);
+                    }
                 })
                 .exec(command)) {
 
-            // Wait briefly to ensure command fired (Fabric8 exec is async)
-            // For long running background jobs (nohup), we don't wait for "Done"
             if (command[command.length - 1].trim().endsWith("&")) {
-                Thread.sleep(500);
+                Thread.sleep(1000);
             } else {
-                data.get(30, TimeUnit.SECONDS); // Block for synchronous setup commands (npm install)
+                data.get(30, TimeUnit.SECONDS);
             }
 
         } catch (Exception e) {
-            log.error("Exec failed", e);
-            throw new RuntimeException("Pod Execution Failed", e);
+            log.error("Exec failed on {}:{}. StdOut: {}, StdErr: {}", podName, container, out.toString(), err.toString(), e);
+            throw new RuntimeException("Pod Execution Failed: " + e.getMessage(), e);
         }
     }
 
